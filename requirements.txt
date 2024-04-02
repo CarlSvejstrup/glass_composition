@@ -1,0 +1,8 @@
+numpy == 1.26.4
+pandas == 2.2.1
+sklearn == 1.4.0
+matplotlib == 3.8.3
+seaborn == 0.13.2
+dtuimldmtools ==0.1.5
+torch == 2.0.1
+scipy == 1.12.0
