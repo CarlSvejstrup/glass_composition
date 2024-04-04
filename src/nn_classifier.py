@@ -76,6 +76,7 @@ def train(dataloader, model, loss_fn, optimizer, verbose=1):
 
     Returns:
         list: The learning curve, which is a list of loss values for each batch during training.
+        model: The trained model.
     """
     size = len(dataloader.dataset)
     model.train()
@@ -104,7 +105,7 @@ def train(dataloader, model, loss_fn, optimizer, verbose=1):
     if verbose >= 1:  # Basic progress update after all batches
         print(f"Training complete. Final loss: {learning_curve[-1]:>7f}")
 
-    return learning_curve
+    return learning_curve, model
 
 
 def test(dataloader, model, loss_fn, verbose):
@@ -156,7 +157,7 @@ def train_and_eval(
     for t in range(epochs):
         if verbose >= 1:
             print(f"Epoch {t+1}\n-------------------------------")
-        learning_curve = train(
+        learning_curve, _ = train(
             train_dataloader, model, loss_fn, optimizer, verbose=verbose
         )
         learning_curve_epochs.extend(learning_curve)
@@ -180,32 +181,10 @@ def train_and_eval(
     return best_err_rate, best_model, learning_curve_epochs
 
 
-def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inner=5):
-    """
-    Perform nested layer cross-validation for training and evaluating a neural network model.
-
-    Args:
-        dataset (tuple): A tuple containing the input features and target labels.
-        hidden_neurons (list): A list of integers representing the number of neurons in each hidden layer.
-        batch_size (int): The batch size for training the neural network.
-        epochs (int, optional): The number of epochs for training the neural network. Defaults to 5.
-        verbose (int, optional): The level of verbosity for printing progress. Defaults to 1.
-        K_inner (int, optional): The number of inner folds for cross-validation. Defaults to 5.
-
-    Returns:
-        tuple: A tuple containing the optimal number of hidden neurons, the best model, the lowest error,
-               and the best training error for each number of hidden neurons.
-    """
-    # Function code goes here...
-
-
-def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inner=5):
+def nested_layer(dataset, hidden_neurons, batch_size, standardize = False, epochs=5, verbose=1, K_inner=5):
     # Convert dataset to tensors
-    X_tensor = torch.tensor(dataset[0], dtype=torch.float32)
-    y_tensor = torch.tensor(dataset[1], dtype=torch.float32)
-
-    # Create dataset object
-    dataset = NNDataset(X_tensor, y_tensor)
+    X = dataset[0]
+    y = dataset[1]
 
     # Initialize variables to store results
     inner_k_folds = model_selection.KFold(n_splits=K_inner, shuffle=True)
@@ -225,19 +204,33 @@ def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inn
     inner_fold_lowest_error = float("inf")
 
     # Inner k-fold loop
-    for i, (train_indx, test_index) in enumerate(inner_k_folds.split(dataset)):
+    for i, (train_indx, test_index) in enumerate(inner_k_folds.split(X, y)):
+        X_train, y_train = X[train_indx, :], y[train_indx]
+        X_test, y_test = X[test_index, :], y[test_index]
 
-        if verbose >= 2:
-            print(f"Starting Inner Fold {i+1}/{K_inner}", "\n", "-" * 30)
+        # Standardize the data
+        if standardize: 
+            scaler = StandardScaler()
+            X_train = scaler.fit_transform(X_train)
+            X_test = scaler.transform(X_test)
+
+        X_train = torch.tensor(X_train, dtype=torch.float32)
+        y_train = torch.tensor(y_train, dtype=torch.float32)
+        X_test = torch.tensor(X_test, dtype=torch.float32)
+        y_test = torch.tensor(y_test, dtype=torch.float32)
+
+        # Create dataset objects
+        train_dataset = NNDataset(X_train, y_train)
+        test_dataset = NNDataset(X_test, y_test)
 
         # Create dataloaders for training and testing
-        train_dataset = Subset(dataset, train_indx)
-        test_dataset = Subset(dataset, test_index)
-
         train_dataloader = DataLoader(
             train_dataset, batch_size=batch_size, shuffle=True
         )
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+
+        if verbose >= 2:
+            print(f"Starting Inner Fold {i+1}/{K_inner}", "\n", "-" * 30)
 
         fold_best_error = float("inf")
         fold_optimal_hidden_neurons = None
@@ -355,3 +348,49 @@ def error_rate(X, y, model, verbose):
         print(f"Error rate: {error_rate:.8f}")
 
     return accuracy, error_rate, np.asanyarray(all_preds)
+
+
+def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose=1):
+    """
+    Perform the outer loop of the nested cross-validation for training and evaluating a neural network model.
+
+    Args:
+        train_set (tuple): A tuple containing the input features and target values for training.
+        test_set (tuple): A tuple containing the input features and target values for testing.
+        hidden_neuron (int): The number of hidden neurons in the neural network.
+        batch_size (int): The batch size for training the neural network.
+        epochs (int, optional): The number of epochs for training the neural network. Defaults to 5.
+        verbose (int, optional): The verbosity level. Set to 0 for no output, 1 for minimal output, and 2 for detailed output. Defaults to 1.
+
+    Returns:
+        tuple: A tuple containing the best test error, the best model, and the learning curve.
+
+    """
+
+    # Convert training and test sets to tensors
+    X_train_tensor = torch.tensor(train_set[0], dtype=torch.float32)
+    y_train_tensor = torch.tensor(train_set[1], dtype=torch.float32)
+
+    # Create dataset objects
+    train_dataset = NNDataset(X_train_tensor, y_train_tensor)
+
+    # Create dataloaders for the training and test sets
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    # Get a sample to determine feature size
+    sample_features, _ = train_dataset[0]
+    input_size = sample_features.shape[0]
+
+    # Initialize the neural network model, loss function, and optimizer
+    model = ANN(input=input_size, hidden=hidden_neuron, output=1)
+    loss_fn = nn.BCELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    for _ in range(epochs):
+        _, model = train(train_dataloader, model, loss_fn, optimizer, verbose=verbose)
+
+    _, error_rate, squared_err = error_rate(test_set[0], test_set[1], model, verbose)
+    # Evaluate the model on the test set
+    # TODO
+    # Return the error_rate function (squared error and error)
+    return error_rate, squared_err

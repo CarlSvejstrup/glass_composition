@@ -200,6 +200,8 @@ def train_and_eval(
     best_model = None
     learning_curve_epochs = []
 
+    # See dtype of dataloader
+
     for t in range(epochs):
         if verbose >= 1:
             print(f"Epoch {t+1}\n-------------------------------")
@@ -211,7 +213,7 @@ def train_and_eval(
         # add curve from individual epoch to learning_curve_epochs
 
         # Test the model after each epoch
-        eval_error, _ = test(test_dataloader, model, loss_fn, verbose=verbose)
+        eval_error, squared_err = test(test_dataloader, model, loss_fn, verbose=verbose)
 
         # Save the best model
         if eval_error < best_test_error:
@@ -219,15 +221,21 @@ def train_and_eval(
             best_model = model
 
     if verbose >= 1:  # Final summary after all epochs
-        print(
-            f"Finished Training the model. Best Test MSE: {best_test_error:>8f}\n"
-        )
+        print(f"Finished Training the model. Best Test MSE: {best_test_error:>8f}\n")
         print("___" * 20, "\n")
 
-    return best_test_error, best_model, learning_curve_epochs
+    return best_test_error, best_model, learning_curve_epochs, squared_err
 
 
-def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inner=5):
+def nested_layer(
+    dataset,
+    hidden_neurons,
+    batch_size,
+    standardize=False,
+    epochs=5,
+    verbose=1,
+    K_inner=5,
+):
     """
     Perform nested layer cross-validation for training and evaluating a neural network model.
 
@@ -243,11 +251,8 @@ def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inn
         tuple: A tuple containing the optimal number of hidden neurons, the best model, the lowest error, and the best training error for each number of hidden neurons.
     """
     # Convert dataset to tensors
-    X_tensor = torch.tensor(dataset[0], dtype=torch.float32)
-    y_tensor = torch.tensor(dataset[1], dtype=torch.float32)
-
-    # Create dataset object
-    dataset = NNDataset(X_tensor, y_tensor)
+    X = dataset[0]
+    y = dataset[1]
 
     # Initialize inner k-fold cross-validation
     inner_k_folds = model_selection.KFold(n_splits=K_inner, shuffle=True)
@@ -266,21 +271,35 @@ def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inn
     inner_fold_lowest_error = float("inf")
 
     # Inner k-fold loop
-    for i, (train_indx, test_index) in enumerate(inner_k_folds.split(dataset)):
+    for i, (train_indx, test_index) in enumerate(inner_k_folds.split(X, y)):
+        X_train, y_train = X[train_indx, :], y[train_indx]
+        X_test, y_test = X[test_index, :], y[test_index]
+
+        # Standardize the data and prepare the dataloaders
+        if standardize:
+            scaler = StandardScaler()
+            X_train = scaler.fit_transform(X_train)
+            X_test = scaler.transform(X_test)
+
+        X_train = torch.tensor(X_train, dtype=torch.float32)
+        y_train = torch.tensor(y_train, dtype=torch.float32)
+        X_test = torch.tensor(X_test, dtype=torch.float32)
+        y_test = torch.tensor(y_test, dtype=torch.float32)
+
+        train_dataset = NNDataset(X_train, y_train)
+        test_dataset = NNDataset(X_test, y_test)
+
+        train_dataloader = DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True
+        )
+        test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
         # Print information about the current inner fold if verbosity level is 2 or higher
         if verbose >= 2:
             print(f"Starting Inner Fold {i+1}/{K_inner}", "\n", "-" * 30)
 
-        # Create dataloaders for the training and test sets
-        train_dataset = Subset(dataset, train_indx)
-        test_dataset = Subset(dataset, test_index)
-
-        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-        test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-
         # Get a sample to determine feature size
-        sample_features, _ = train_dataset[0]  
+        sample_features, _ = train_dataset[0]
         input_size = sample_features.shape[0]
 
         # Initialize variables to store the best error and model for the current fold
@@ -300,7 +319,7 @@ def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inn
             optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
             # Return best model, best test error and learning curve
-            test_error, model, learning_curve = train_and_eval(
+            test_error, model, learning_curve, _ = train_and_eval(
                 model,
                 train_dataloader,
                 test_dataloader,
@@ -355,3 +374,59 @@ def nested_layer(dataset, hidden_neurons, batch_size, epochs=5, verbose=1, K_inn
         inner_fold_lowest_error,
         hidden_neurons_best_error,
     )
+
+
+def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose=1):
+    """
+    Perform the outer loop of the nested cross-validation for training and evaluating a neural network model.
+
+    Args:
+        train_set (tuple): A tuple containing the input features and target values for training.
+        test_set (tuple): A tuple containing the input features and target values for testing.
+        hidden_neuron (int): The number of hidden neurons in the neural network.
+        batch_size (int): The batch size for training the neural network.
+        epochs (int, optional): The number of epochs for training the neural network. Defaults to 5.
+        verbose (int, optional): The verbosity level. Set to 0 for no output, 1 for minimal output, and 2 for detailed output. Defaults to 1.
+
+    Returns:
+        tuple: A tuple containing the best test error, the best model, and the learning curve.
+
+    """
+    if verbose >= 1:
+        print("Starting Outer Loop training", "\n", "-" * 30)
+
+    # Convert training and test sets to tensors
+    X_train_tensor = torch.tensor(train_set[0], dtype=torch.float32)
+    y_train_tensor = torch.tensor(train_set[1], dtype=torch.float32)
+    X_test_tensor = torch.tensor(test_set[0], dtype=torch.float32)
+    y_test_tensor = torch.tensor(test_set[1], dtype=torch.float32)
+
+    # Create dataset objects
+    train_dataset = NNDataset(X_train_tensor, y_train_tensor)
+    test_dataset = NNDataset(X_test_tensor, y_test_tensor)
+
+    # Create dataloaders for the training and test sets
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+
+    # Get a sample to determine feature size
+    sample_features, _ = train_dataset[0]
+    input_size = sample_features.shape[0]
+
+    # Initialize the neural network model, loss function, and optimizer
+    model = ANN(input=input_size, hidden=hidden_neuron, output=1)
+    loss_fn = nn.MSELoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+    # Train and evaluate the model
+    test_error, model, learning_curve, squared_err = train_and_eval(
+        model,
+        train_dataloader,
+        test_dataloader,
+        loss_fn,
+        optimizer,
+        epochs=epochs,
+        verbose=verbose,
+    )
+
+    return test_error, model, learning_curve, squared_err

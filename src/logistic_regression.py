@@ -67,12 +67,16 @@ def train(
     # Split the data into X and y and convert to numpy arrays
     X_train, y_train = train_set
 
+    # Standardize the features
+    standardize = StandardScaler()
+    X_train = standardize.fit_transform(X_train)
+
     # Create a logistic regression model with cross-validation
     model = lm.LogisticRegressionCV(
-        penalty="l2", Cs=1 / alphas, cv=K_inner, verbose=verbose, max_iter=1000
+        penalty="l2", Cs=1 / alphas, cv=K_inner, max_iter=1000
     )
 
-    # Fit the model to the training data
+    # Fit the best model from the inner cv to the training data
     model = model.fit(X_train, y_train)
 
     # Predict the labels for the training data
@@ -98,7 +102,7 @@ def error_rate(model, test_set):
     # Extract the test features and labels from the test set tuple
     X_test, y_test = test_set
 
-    # Predict the labels for the test features using the trained model
+    # Predict the labels for the test features using the best model from the inner cv
     y_test_est = model.predict(X_test)
 
     # Calculate the error rate by counting the number of misclassified samples and dividing by the total number of samples
@@ -109,7 +113,7 @@ def error_rate(model, test_set):
     return test_err, pred.astype(int)
 
 
-def train_eval(train_set, test_set, alphas, K_inner=10, verbose=0):
+def train_eval(train_inner, train_outer, test_set, alphas, K_inner=10, verbose=0):
     """
     Trains a logistic regression model on the given train_set and evaluates its performance on the test_set.
 
@@ -125,16 +129,18 @@ def train_eval(train_set, test_set, alphas, K_inner=10, verbose=0):
         predictions (array): An array of 0s and 1s indicating whether each sample was misclassified (1) or not (0) on test.
     """
     # Train the logistic regression model on the training set
-    model, y_train_est = train(train_set, verbose, alphas, K_inner)
-
-    # Calculate the error rate of the trained model on the test set
-    test_err, pred = error_rate(model, test_set)
-
+    model, y_train_est = train(train_inner, verbose, alphas, K_inner)
     # Find the index of the optimal alpha value in the list of alphas
     opt_alpha_idx = np.where(1 / np.array(alphas) == model.C_[0])[0][0]
-
     # Get the optimal alpha value corresponding to the index
     opt_alpha = alphas[opt_alpha_idx]
+
+    # Train and test for outer loop
+    model = lm.LogisticRegression(C=opt_alpha, max_iter=1000, penalty="l2")
+    # 
+    model = model.fit(train_outer[0], train_outer[1])
+    # Calculate the error rate of the trained model on the test set
+    test_err, pred = error_rate(model, test_set)
 
     # Return the test error rate, optimal alpha index, optimal alpha value, and the trained model
     return test_err, opt_alpha_idx, opt_alpha, model, pred

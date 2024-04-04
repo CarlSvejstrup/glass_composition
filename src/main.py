@@ -22,6 +22,11 @@ from data_loader import *
 import logistic_regression as log_reg
 import statistical_tests as stats
 
+
+# TODO
+# - Seperate the standardization in inner and outer loop
+# - Train eval can be for inner or outer loop (nn)
+
 np.random.seed(13)
 torch.manual_seed(13)
 
@@ -37,8 +42,8 @@ def outer_layer(
     K_outer=10,
     K_inner=5,
     verbose=1,
+    nn_standardize=False,
     regression=True,
-    nn_type="regression",
 ):
     """
     Perform outer layer of k-fold cross-validation for regression or classification tasks.
@@ -54,8 +59,9 @@ def outer_layer(
     - K_outer (int): Number of outer folds for k-fold cross-validation. Default is 10.
     - K_inner (int): Number of inner folds for k-fold cross-validation. Default is 5.
     - verbose (int): Verbosity level. Set to 0 for no output, 1 for progress updates, and 2 for detailed output. Default is 1.
+    - nn_standardize (bool): Whether to standardize the data for the neural network. Default is False.
     - regression (bool): Whether the task is regression or classification. Default is True.
-    - nn_type (str): Type of neural network task. Options are 'regression' or 'classification'. Default is 'regression'.
+
 
     Returns:
     - If regression is True:
@@ -97,10 +103,24 @@ def outer_layer(
             X_train, X_test = X[train_idx, :], X[test_idx, :]
             y_train, y_test = y[train_idx], y[test_idx]
 
+            # Training data for inner loop
             train_data = (X_train, y_train)
-            outer_test_data = (X_test, y_test)
 
-          
+            # Standardize the features based on the training set
+            if nn_standardize:
+                scaler = StandardScaler()
+                # Standardize the features based on the training set
+
+                X_train = scaler.fit_transform(X_train)
+                X_test = scaler.transform(X_test)
+
+                outer_train_data = (X_train, y_train)
+                outer_test_data = (X_test, y_test)
+
+            else:
+                outer_train_data = (X_train, y_train)
+                outer_test_data = (X_test, y_test)
+
             # Regalurized linear regression
             (
                 opt_lambda,
@@ -112,7 +132,7 @@ def outer_layer(
 
             # Testing regression for the current fold
             Error_test_regression[i], w_rlr, squared_err_rlr = rlr.test_rlr(
-                outer_test_data, train_data, opt_lambda
+                outer_test_data, outer_train_data, opt_lambda
             )
             w_rlr_arr.append(w_rlr)
 
@@ -121,7 +141,7 @@ def outer_layer(
                 rlr.lr_baseline(train_data, outer_test_data)
             )
 
-            # Train and evaluate hidden neurons
+            # Train and evaluate hidden neurons from the inner layers
             (
                 inner_fold_optimal_hidden_neurons,
                 inner_fold_best_model,
@@ -131,22 +151,17 @@ def outer_layer(
                 dataset=train_data,
                 hidden_neurons=hidden_neurons_list,
                 batch_size=batch_size,
+                standardize=nn_standardize,
                 epochs=epochs,
                 verbose=verbose,
                 K_inner=K_inner,
             )
-
-            # Convert the outer test set to tensors for the NN
-            test_outer_nn = nn_reg.NNDataset(
-                torch.tensor(X_test, dtype=torch.float32),
-                torch.tensor(y_test, dtype=torch.float32),
-            )
-            test_outer = DataLoader(test_outer_nn, batch_size=batch_size, shuffle=False)
-
-            test_error_nn, squared_err_nn = nn_reg.test(
-                dataloader=test_outer,
-                model=inner_fold_best_model,
-                loss_fn=nn.MSELoss(),
+            test_error_nn, _, _, squared_err_nn = nn_reg.outer_test(
+                train_set=outer_train_data,
+                test_set=outer_test_data,
+                hidden_neuron=inner_fold_optimal_hidden_neurons,
+                batch_size=batch_size,
+                epochs=epochs,
                 verbose=verbose,
             )
 
@@ -160,10 +175,10 @@ def outer_layer(
                 print(
                     f"{'rlr':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {Error_test_regression[i][0]:.2e} with {opt_lambda:.2e} Lambda"
                 )
-                if nn_type == "regression":
-                    print(
-                        f"{'ANN regression':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {test_error_nn:.2e} with {inner_fold_optimal_hidden_neurons} Neurons"
-                    )
+
+                print(
+                    f"{'ANN regression':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {test_error_nn:.2e} with {inner_fold_optimal_hidden_neurons} Neurons"
+                )
 
                 print("---" * 20)
 
@@ -207,10 +222,23 @@ def outer_layer(
             X_train, X_test = X[train_idx, :], X[test_idx, :]
             y_train, y_test = y[train_idx], y[test_idx]
 
-            print(y_test.shape, X_test.shape)
-
+            # Training data for inner loop
             train_data = (X_train, y_train)
-            outer_test_data = (X_test, y_test)
+
+            # Standardize the features based on the training set
+            if nn_standardize:
+                scaler = StandardScaler()
+                # Standardize the features based on the training set
+
+                X_train = scaler.fit_transform(X_train)
+                X_test = scaler.transform(X_test)
+
+                outer_train_data = (X_train, y_train)
+                outer_test_data = (X_test, y_test)
+
+            else:
+                outer_train_data = (X_train, y_train)
+                outer_test_data = (X_test, y_test)
 
             # Baseline testing for the current fold for classification for the dominant class
             Error_test_baseline[i], Error_train_baseline[i], prediction_baseline = (
@@ -227,15 +255,19 @@ def outer_layer(
                 dataset=train_data,
                 hidden_neurons=hidden_neurons_list,
                 batch_size=batch_size,
+                standardize=nn_standardize,
                 epochs=epochs,
                 verbose=verbose,
                 K_inner=K_inner,
             )
 
-            # Convert the outer test set to tensors for the NN
-
-            accuracy, error_rate_nn, preciction_nn = nn_class.error_rate(
-                X_test, y_test, model=inner_fold_best_model, verbose=verbose
+            error_rate_nn, prediction_nn = nn_class.outer_test(
+                outer_train_data,
+                outer_test_data,
+                hidden_neuron=inner_fold_optimal_hidden_neurons,
+                batch_size=batch_size,
+                epochs=epochs,
+                verbose=verbose,
             )
 
             test_errors[i] = error_rate_nn
@@ -243,7 +275,12 @@ def outer_layer(
             # Testing regression for the current fold
             test_err_log_reg, opt_alpha_idx, opt_alpha, model, prediction_log_reg = (
                 log_reg.train_eval(
-                    train_data, outer_test_data, alphas, K_inner, verbose=verbose
+                    train_data,
+                    outer_train_data,
+                    outer_test_data,
+                    alphas,
+                    K_inner,
+                    verbose=verbose,
                 )
             )
 
@@ -263,7 +300,7 @@ def outer_layer(
 
             stats.mc_nemar(
                 y_true=y_test,
-                pred_nn=preciction_nn,
+                pred_nn=prediction_nn,
                 pred_baseline=prediction_baseline,
                 pred_log_reg=prediction_log_reg,
                 alpha=0.05,
@@ -291,13 +328,14 @@ alphas = np.logspace(-5, 9, num=40)
 outer_layer(
     X,
     y,
-    batch_size=10,
+    batch_size=5,
     hidden_neurons_list=neurons,
-    epochs=50,
+    epochs=25,
     K_outer=10,
     K_inner=10,
     verbose=0,
     alphas=alphas,
     plot=True,
+    nn_standardize=False,
     regression=True,
 )

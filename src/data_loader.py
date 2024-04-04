@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler
 
 # All atributes exept Type (nomial) are continuos ratio.
 attribute_names = ["Id", "RI", "Na", "Mg", "Al", "Si", "K ", "Ca", "Ba", "Fe", "Type"]
-filename = "./glass_composition/data/glass.data"
+filename = "./data/glass.data"
 
 glass_type = {
     1: "building_windows_float_processed",

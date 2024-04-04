@@ -8,6 +8,36 @@ import sklearn.linear_model as lm
 from dtuimldmtools import rlr_validate
 
 
+def lr_baseline(train_set, test_set):
+    """
+    Calculate the baseline error for linear regression.
+
+    Parameters:
+    train_set (tuple): A tuple containing the training data (X_train, y_train).
+    test_set (tuple): A tuple containing the test data (X_test, y_test).
+
+    Returns:
+    tuple: A tuple containing the baseline test error, baseline train error, and squared errors.
+    """
+
+    # Initialize variables
+    Error_test_baseline = None
+    Error_train_baseline = None
+
+    # Extract labels from train_set and test_set
+    _, y_train = train_set
+    _, y_test = test_set
+
+    # Calculate the baseline error for the training set
+    Error_train_baseline = np.mean(np.square(y_train - np.mean(y_train)))
+
+    # Calculate the baseline error for the test set
+    squared_errors = np.square(y_test - np.mean(y_test))
+    Error_test_baseline = np.mean(squared_errors)
+
+    return Error_test_baseline, Error_train_baseline, squared_errors
+
+
 def train_rlr(train_set, alphas, K_inner=5):
     """
     Trains a regularized linear regression model using the given training set.
@@ -72,11 +102,6 @@ def test_rlr(test_set, train_set, opt_lambda):
     X_test = np.concatenate((np.ones((X_test.shape[0], 1)), X_test), 1)
     X_train = np.concatenate((np.ones((X_train.shape[0], 1)), X_train), 1)
 
-    # Standardize the data
-    standardize = StandardScaler()
-    X_train = standardize.fit_transform(X_train)
-    X_test = standardize.fit_transform(X_test)
-
     # Regularized linear regression model
     rlr_model = lm.Ridge(alpha=opt_lambda, fit_intercept=True).fit(X_train, y_train)
 
@@ -92,37 +117,6 @@ def test_rlr(test_set, train_set, opt_lambda):
     w_rlr[0] = rlr_model.intercept_
 
     return Error_test_rlr, w_rlr, squared_errors
-
-
-def lr_baseline(train_set, test_set):
-    """
-    Calculate the baseline error for linear regression.
-
-    Parameters:
-    train_set (tuple): A tuple containing the training data (X_train, y_train).
-    test_set (tuple): A tuple containing the test data (X_test, y_test).
-
-    Returns:
-    tuple: A tuple containing the baseline test error, baseline train error, and squared errors.
-    """
-
-    # Initialize variables
-    Error_test_baseline = None
-    Error_train_baseline = None
-
-    # Extract labels from train_set and test_set
-    _, y_train = train_set
-    _, y_test = test_set
-
-    # Calculate the baseline error for the training set
-    Error_train_baseline = np.mean(np.square(y_train - np.mean(y_train)))
-
-    # Calculate the baseline error for the test set
-    squared_errors = np.square(y_test - np.mean(y_test))
-    Error_test_baseline = np.mean(squared_errors)
-    
-
-    return Error_test_baseline, Error_train_baseline, squared_errors
 
 
 def plot_rlr(
