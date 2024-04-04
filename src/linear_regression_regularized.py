@@ -75,7 +75,7 @@ def train_rlr(train_set, alphas, K_inner=5):
     )
 
 
-def test_rlr(test_set, train_set, opt_lambda):
+def outer_test_rlr(test_set, train_set, opt_lambda):
     """
     Perform regularized linear regression on the test set.
 
@@ -92,7 +92,6 @@ def test_rlr(test_set, train_set, opt_lambda):
 
     # Initialize variables
     w_rlr = None
-    Error_test_rlr = None
 
     # Split the data into X and y and convert to numpy arrays
     X_train, y_train = train_set
@@ -105,18 +104,24 @@ def test_rlr(test_set, train_set, opt_lambda):
     # Regularized linear regression model
     rlr_model = lm.Ridge(alpha=opt_lambda, fit_intercept=True).fit(X_train, y_train)
 
-    # Predict the labels 
+    # Predict the labels on train_data
+    pred = rlr_model.predict(X_train)
+    # Calculate the mean squared error for the training data
+    train_err = np.square(y_train - pred).mean()
+
+    # Predict the labels on test_data
     pred = rlr_model.predict(X_test)
+    # squared errors (used for statistical testing later on)
     squared_errors = np.square(y_test - pred)
-    # Calculate the mean squared error
-    Error_test_rlr = np.square(y_test - pred).mean()
+    # Calculate the MSE
+    test_err = np.square(y_test - pred).mean()
 
     # Weight vector w_rlr
     w_rlr = rlr_model.coef_
     # Add the bias term to the weight vector
     w_rlr[0] = rlr_model.intercept_
 
-    return Error_test_rlr, w_rlr, squared_errors
+    return test_err, train_err, w_rlr, squared_errors
 
 
 def plot_rlr(

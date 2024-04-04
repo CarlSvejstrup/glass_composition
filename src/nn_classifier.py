@@ -181,7 +181,15 @@ def train_and_eval(
     return best_err_rate, best_model, learning_curve_epochs
 
 
-def nested_layer(dataset, hidden_neurons, batch_size, standardize = False, epochs=5, verbose=1, K_inner=5):
+def nested_layer(
+    dataset,
+    hidden_neurons,
+    batch_size,
+    standardize=False,
+    epochs=5,
+    verbose=1,
+    K_inner=5,
+):
     # Convert dataset to tensors
     X = dataset[0]
     y = dataset[1]
@@ -209,7 +217,7 @@ def nested_layer(dataset, hidden_neurons, batch_size, standardize = False, epoch
         X_test, y_test = X[test_index, :], y[test_index]
 
         # Standardize the data
-        if standardize: 
+        if standardize:
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train)
             X_test = scaler.transform(X_test)
@@ -366,6 +374,7 @@ def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose
         tuple: A tuple containing the best test error, the best model, and the learning curve.
 
     """
+    learning_curve_list = []
 
     # Convert training and test sets to tensors
     X_train_tensor = torch.tensor(train_set[0], dtype=torch.float32)
@@ -387,10 +396,13 @@ def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     for _ in range(epochs):
-        _, model = train(train_dataloader, model, loss_fn, optimizer, verbose=verbose)
+        learning_curve, model = train(
+            train_dataloader, model, loss_fn, optimizer, verbose=verbose
+        )
+        learning_curve_list.extend(learning_curve)
 
-    _, error_rate, squared_err = error_rate(test_set[0], test_set[1], model, verbose)
+    _, test_err, squared_err = error_rate(test_set[0], test_set[1], model, verbose)
     # Evaluate the model on the test set
     # TODO
     # Return the error_rate function (squared error and error)
-    return error_rate, squared_err
+    return test_err, learning_curve_list, squared_err

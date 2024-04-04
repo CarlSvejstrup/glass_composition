@@ -77,25 +77,14 @@ def t_test(squared_err_rlr, squared_err_nn, squared_err_baseline, alpha=0.05):
         df=len(z_nn_baseline) - 1,
     )  # p-value
 
-    # Print the results
-    print("\nStatistical test results:")
-    print("---" * 20)
-    print(f"{'rlr model:':<20} Lower: {CI_rlr[0]:.2e}, Upper: {CI_rlr[1]:.2e}")
-    print(f"{'ANN model:':<20} Lower: {CI_nn[0]:.2e}, Upper: {CI_nn[1]:.2e}")
-    print(
-        f"{'baseline model:':<20} Lower: {CIA_baseline[0]:.2e}, Upper: {CIA_baseline[1]:.2e}"
-    )
-    print("___" * 20)
-    print(
-        f"{'rlr and baseline:':<20} Lower: {CI_rlr_baseline[0]:.2e}, Upper: {CI_rlr_baseline[1]:.2e}, p-value: {p_rlr_baseline:.2e}"
-    )
-    print(
-        f"{'rlr and nn:':<20} Lower: {CI_rlr_nn[0]:.2e}, Upper: {CI_rlr_nn[1]:.2e}, p-value: {p_rlr_nn:.2e}"
-    )
-    print(
-        f"{'nn and baseline:':<20} Lower: {CI_nn_baseline[0]:.2e}, Upper: {CI_nn_baseline[1]:.2e}, p-value: {p_nn_baseline:.2e}"
-    )
-    print("___" * 20)
+    return {
+        "rlr": CI_rlr,
+        "nn": CI_nn,
+        "baseline": CIA_baseline,
+        "rlr_baseline": (CI_rlr_baseline, p_rlr_baseline),
+        "rlr_nn": (CI_rlr_nn, p_rlr_nn),
+        "nn_baseline": (CI_nn_baseline, p_nn_baseline),
+    }
 
 
 def mc_nemar(y_true, pred_nn, pred_baseline, pred_log_reg, alpha=0.05):
@@ -111,19 +100,30 @@ def mc_nemar(y_true, pred_nn, pred_baseline, pred_log_reg, alpha=0.05):
     Returns:
         tuple: A tuple containing the point estimate (thetahat), confidence interval (CI), and p-value (p).
     """
-    print("\n Statistical test results:")
-    print("---" * 20)
+    # print("\n Statistical test results:")
+    # print("---" * 20)
 
-    print(f"Model (ANN) and Model: (Baseline):")
-    [thetahat, CI, p] = mcnemar(y_true, pred_nn, pred_baseline, alpha=alpha)
-    print(thetahat)
+    # print(f"Model (ANN) and Model: (Baseline):")
+    [thetahat_1, CI_1, p_1] = mcnemar(
+        y_true, pred_nn, pred_baseline, alpha=alpha, print=False
+    )
+    # print(thetahat)
 
-    print("___" * 20)
-    print(f"Model (ANN): and Model: (Logistic regression):")
-    [thetahat, CI, p] = mcnemar(y_true, pred_nn, pred_log_reg, alpha=alpha)
-    print(thetahat)
+    # print("___" * 20)
+    # print(f"Model (ANN): and Model: (Logistic regression):")
+    [thetahat_2, CI_2, p_2] = mcnemar(
+        y_true, pred_nn, pred_log_reg, alpha=alpha, print=False
+    )
+    #  print(thetahat)
 
-    print("___" * 20)
-    print(f"Model (Baseline): and Model: (Logistic regression):")
-    [thetahat, CI, p] = mcnemar(y_true, pred_log_reg, pred_baseline, alpha=alpha)
-    print(thetahat)
+    # print("___" * 20)
+    # print(f"Model (Baseline): and Model: (Logistic regression):")
+    [thetahat_3, CI_3, p_3] = mcnemar(
+        y_true, pred_log_reg, pred_baseline, alpha=alpha, print=False
+    )
+
+    return {
+        "nn_baseline": [thetahat_1, CI_1, p_1],
+        "nn_logreg": [thetahat_2, CI_2, p_2],
+        "baseline_logreg": [thetahat_3, CI_3, p_3],
+    }

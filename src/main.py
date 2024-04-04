@@ -1,19 +1,10 @@
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
-
-import matplotlib.pyplot as plt
+import logging
 
 # ANN
 import torch
-from torch import nn, utils
-from torch.utils.data import DataLoader, Dataset, Subset
-
-
 from sklearn import model_selection
-import sklearn.linear_model as lm
-from dtuimldmtools import rlr_validate
 
 import nn_classifier as nn_class
 import nn_regressor as nn_reg
@@ -24,11 +15,100 @@ import statistical_tests as stats
 
 
 # TODO
-# - Seperate the standardization in inner and outer loop
-# - Train eval can be for inner or outer loop (nn)
+# - Add more comments
 
 np.random.seed(13)
 torch.manual_seed(13)
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger()
+
+
+# Logging the results for test and training
+def print_fold_results(
+    i,
+    K_outer,
+    train_errors_baseline,
+    train_errors_regression,
+    train_errors_nn,
+    test_errors_baseline,
+    test_errors_regression,
+    test_errors_nn,
+):
+    logger.info(f"\n==== Running Outer Fold {i+1}/{K_outer} ====")
+
+    # Training Results
+    logger.info("\nTraining Results:")
+    logger.info("-" * 50)
+    logger.info(f"{'Model':<20} | {'Train Error':<20} | {'Notes'}")
+    logger.info(f"{'Baseline':<20} | {train_errors_baseline[i][0]:<20.2e} |")
+    logger.info(
+        f"{'RLR':<20} | {train_errors_regression[i][0]:<20.2e} | Lambda: {train_errors_regression[i][1]:.2e}"
+    )
+    logger.info(
+        f"{'ANN Regression':<20} | {train_errors_nn[i][0]:<20.2e} | Neurons: {train_errors_nn[i][1]}"
+    )
+
+    # Testing Results
+    logger.info("\nTesting Results:")
+    logger.info("-" * 50)
+    logger.info(f"{'Model':<20} | {'Test Error':<20} | {'Notes'}")
+    logger.info("-" * 50)
+    logger.info(f"{'Baseline':<20} | {test_errors_baseline[i][0]:<20.2e} |")
+    logger.info(
+        f"{'RLR':<20} | {test_errors_regression[i][0]:<20.2e} | Lambda: {test_errors_regression[i][1]:.2e}"
+    )
+    logger.info(
+        f"{'ANN Regression':<20} | {test_errors_nn[i][0]:<20.2e} | Neurons: {test_errors_nn[i][1]}"
+    )
+    logger.info("=" * 50)
+
+
+# Logging the results for the statistical tests
+def print_statistical_test_results(results, t_test=True):
+    if t_test:
+        logger.info("\n=== Statistical T-Test Results ===")
+        logger.info(
+            f"{'Model':<15} | {'Lower CI':<15} | {'Upper CI':<15} | {'p_value'}"
+        )
+        logger.info("-" * 60)
+        logger.info(
+            f"{'RLR':<15} | {results['rlr'][0]:<15.2e} | {results['rlr'][1]:<15.2e} |"
+        )
+        logger.info(
+            f"{'NN':<15} | {results['nn'][0]:<15.2e} | {results['nn'][1]:<15.2e} |"
+        )
+        logger.info(
+            f"{'Baseline':<15} | {results['baseline'][0]:<15.2e} | {results['baseline'][1]:<15.2e} |"
+        )
+        logger.info(
+            f"{'RLR-Baseline':<15} | {results['rlr_baseline'][0][0]:<15.2e} | {results['rlr_baseline'][0][1]:<15.2e} | p-value: {results['rlr_baseline'][1]:.2e}"
+        )
+        logger.info(
+            f"{'RLR-NN':<15} | {results['rlr_nn'][0][0]:<15.2e} | {results['rlr_nn'][0][1]:<15.2e} | p-value: {results['rlr_nn'][1]:.2e}"
+        )
+        logger.info(
+            f"{'NN-Baseline':<15} | {results['nn_baseline'][0][0]:<15.2e} | {results['nn_baseline'][0][1]:<15.2e} | p-value: {results['nn_baseline'][1]:.2e}"
+        )
+        logger.info("-" * 60)
+    else:
+        logger.info("\n=== McNemar's Test Results ===")
+        logger.info(
+            f"{'Comparison':<20} | {'Statistic':<10} | {'CI Lower':<15} | {'CI Upper':<15} | {'p-value':<10}"
+        )
+        logger.info("-" * 60)
+        logger.info(
+            f"{'NN vs. Baseline':<20} | {results['nn_baseline'][0]:<10.2f} | {results['nn_baseline'][1][0]:<15.2e} | {results['nn_baseline'][1][1]:<15.2e} | {results['nn_baseline'][2]:<10.2e}"
+        )
+        logger.info(
+            f"{'NN vs. LogReg':<20} | {results['nn_logreg'][0]:<10.2f} | {results['nn_logreg'][1][0]:<15.2e} | {results['nn_logreg'][1][1]:<15.2e} | {results['nn_logreg'][2]:<10.2e}"
+        )
+        logger.info(
+            f"{'LogReg vs. Baseline':<20} | {results['baseline_logreg'][0]:<10.2f} | {results['baseline_logreg'][1][0]:<15.2e} | {results['baseline_logreg'][1][1]:<15.2e} | {results['baseline_logreg'][2]:<10.2e}"
+        )
+        # Assuming similar return structure for other comparisons, repeat the logging format for them
+        logger.info("-" * 60)
 
 
 def outer_layer(
@@ -65,27 +145,35 @@ def outer_layer(
 
     Returns:
     - If regression is True:
-        - inner_fold_optimal_hidden_neurons (int): Number of hidden neurons with the lowest error.
-        - test_errors (numpy.ndarray): Test errors for each outer fold.
-        - hidden_neurons_best_error (float): Lowest error achieved among all hidden neuron configurations.
-    - If regression is False:
-        - Error_test_regression (numpy.ndarray): Test errors for regularized linear regression.
+        - Error_train_regression (numpy.ndarray): Tuple of test errors and optimal alpha for linear regression, for each fold.
+        - Error_test_regression (numpy.ndarray): Tuple of test errors and optimal alpha for linear regression, for each fold.
+        - Error_train_baseline (numpy.ndarray): Training errors for baseline model.
         - Error_test_baseline (numpy.ndarray): Test errors for baseline model.
-        - test_errors (numpy.ndarray): Test errors for neural network classification.
+        - Error_train_nn (numpy.ndarray): Tuple of lowest training error and optimal hidden neurons for neural network regressor, for each fold
+        - Error_test_nn (numpy.ndarray): Tuple of lowest test errors and optimal hidden neurons for neural network regressor, for each fold
+        - learning_curves (numpy.ndarray): Training errors for neural network regressor.
 
+    - If regression is False:
+        - Error_train_regression (numpy.ndarray): Tuple of test errors and optimal alpha for logistic regression, for each fold.
+        - Error_test_regression (numpy.ndarray): Tuple of test errors and optimal alpha for logistic regression, for each fold.
+        - Error_train_baseline (numpy.ndarray): Training errors for baseline model.
+        - Error_test_baseline (numpy.ndarray): Test errors for baseline model.
+        - Error_train_nn (numpy.ndarray): Tuple of lowest training error and optimal hidden neurons for neural network classification, for each fold
+        - Error_test_nn (numpy.ndarray): Tuple of lowest test errors and optimal hidden neurons for neural network classification, for each fold
+        - learning_curves (numpy.ndarray): Training errors for neural network classification.
     """
 
     # Store errors for regression and baseline for each fold
-    Error_train_regression = np.empty((K_outer, 1))
-    Error_test_regression = np.empty((K_outer, 1))
-    Error_train_baseline = np.empty((K_outer, 1))
-    Error_test_baseline = np.empty((K_outer, 1))
-    w_rlr_arr = []
+    train_errors_regression = np.empty((K_outer, 2))
+    test_errors_regression = np.empty((K_outer, 2))
+    train_errors_baseline = np.empty((K_outer, 1))
+    test_errors_baseline = np.empty((K_outer, 1))
+    train_errors_nn = np.empty((K_outer, 2))
+    test_errors_nn = np.empty((K_outer, 2))
+    learning_curves = []
 
-    # Store test errors for NN for each outer fold
-    test_errors = np.empty((K_outer, 1))
-    overall_best_hidden_neurons = None
-    overall_lowest_error_nn = float("inf")
+    # Store weights for regularized linear regression
+    w_rlr_arr = []
 
     kf_outer = model_selection.KFold(n_splits=K_outer, shuffle=True)
 
@@ -94,11 +182,6 @@ def outer_layer(
 
         # outer k-fold loop
         for i, (train_idx, test_idx) in enumerate(kf_outer.split(X, y)):
-
-            # Print progress
-            if verbose >= 0:
-                print(f"\nStarting Outer Fold {i+1}/{K_outer}")
-                print("-" * 30)
 
             X_train, X_test = X[train_idx, :], X[test_idx, :]
             y_train, y_test = y[train_idx], y[test_idx]
@@ -131,13 +214,17 @@ def outer_layer(
             ) = rlr.train_rlr(train_data, alphas=alphas, K_inner=K_inner)
 
             # Testing regression for the current fold
-            Error_test_regression[i], w_rlr, squared_err_rlr = rlr.test_rlr(
+            test_err, train_err, w_rlr, squared_err_rlr = rlr.outer_test_rlr(
                 outer_test_data, outer_train_data, opt_lambda
             )
+
+            train_errors_regression[i] = (train_err, opt_lambda)
+            test_errors_regression[i] = (test_err, opt_lambda)
+
             w_rlr_arr.append(w_rlr)
 
             # Baseline testing for the current fold
-            Error_test_baseline[i], Error_train_baseline[i], squared_err_baseline = (
+            test_errors_baseline[i], train_errors_baseline[i], squared_err_baseline = (
                 rlr.lr_baseline(train_data, outer_test_data)
             )
 
@@ -156,7 +243,9 @@ def outer_layer(
                 verbose=verbose,
                 K_inner=K_inner,
             )
-            test_error_nn, _, _, squared_err_nn = nn_reg.outer_test(
+
+            # Training and testing best model from the inner layer
+            test_err, _, train_err, squared_err_nn = nn_reg.outer_test(
                 train_set=outer_train_data,
                 test_set=outer_test_data,
                 hidden_neuron=inner_fold_optimal_hidden_neurons,
@@ -164,29 +253,31 @@ def outer_layer(
                 epochs=epochs,
                 verbose=verbose,
             )
+            # Get last elements form train_err
 
-            test_errors[i] = test_error_nn
+            test_errors_nn[i] = (test_err, inner_fold_optimal_hidden_neurons)
+            train_errors_nn[i] = (train_err[-1], inner_fold_optimal_hidden_neurons)
+            learning_curves.append(train_err)
 
-            # Print progress
-            if verbose >= 0:
-                print(
-                    f"{'Baseline':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {Error_test_baseline[i][0]:.2e}"
-                )
-                print(
-                    f"{'rlr':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {Error_test_regression[i][0]:.2e} with {opt_lambda:.2e} Lambda"
-                )
-
-                print(
-                    f"{'ANN regression':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {test_error_nn:.2e} with {inner_fold_optimal_hidden_neurons} Neurons"
-                )
-
-                print("---" * 20)
-
-            stats.t_test(
+            resuluts_t_test = stats.t_test(
                 squared_err_rlr=squared_err_rlr,
                 squared_err_nn=squared_err_nn,
                 squared_err_baseline=squared_err_baseline,
             )
+
+            # Print progress
+            if verbose >= 0:
+                print_fold_results(
+                    i,
+                    K_outer,
+                    train_errors_baseline,
+                    train_errors_regression,
+                    train_errors_nn,
+                    test_errors_baseline,
+                    test_errors_regression,
+                    test_errors_nn,
+                )
+                print_statistical_test_results(resuluts_t_test, regression)
 
             # Plot different regeralization rates for the last fold
             if plot and i == K_outer - 1:
@@ -201,9 +292,13 @@ def outer_layer(
                 )
 
         return (
-            inner_fold_optimal_hidden_neurons,
-            test_errors,
-            hidden_neurons_best_error,
+            train_errors_regression,
+            test_errors_regression,
+            train_errors_baseline,
+            test_errors_baseline,
+            train_errors_nn,
+            test_errors_nn,
+            learning_curves,
         )
 
     if regression == False:
@@ -241,7 +336,7 @@ def outer_layer(
                 outer_test_data = (X_test, y_test)
 
             # Baseline testing for the current fold for classification for the dominant class
-            Error_test_baseline[i], Error_train_baseline[i], prediction_baseline = (
+            test_errors_baseline[i], train_errors_baseline[i], prediction_baseline = (
                 log_reg.baseline(train_data, outer_test_data)
             )
 
@@ -261,7 +356,7 @@ def outer_layer(
                 K_inner=K_inner,
             )
 
-            error_rate_nn, prediction_nn = nn_class.outer_test(
+            test_err, train_err, prediction_nn = nn_class.outer_test(
                 outer_train_data,
                 outer_test_data,
                 hidden_neuron=inner_fold_optimal_hidden_neurons,
@@ -270,10 +365,12 @@ def outer_layer(
                 verbose=verbose,
             )
 
-            test_errors[i] = error_rate_nn
+            test_errors_nn[i] = (test_err, inner_fold_optimal_hidden_neurons)
+            train_errors_nn[i] = (train_err[-1], inner_fold_optimal_hidden_neurons)
+            learning_curves.append(train_err)
 
             # Testing regression for the current fold
-            test_err_log_reg, opt_alpha_idx, opt_alpha, model, prediction_log_reg = (
+            test_err, train_err, opt_alpha_idx, opt_alpha, model, prediction_log_reg = (
                 log_reg.train_eval(
                     train_data,
                     outer_train_data,
@@ -283,22 +380,11 @@ def outer_layer(
                     verbose=verbose,
                 )
             )
+            test_errors_regression[i] = (test_err, opt_alpha)
+            train_errors_regression[i] = (train_err, opt_alpha)
 
-            # Print progress
-            if verbose >= 0:
-                print(
-                    f"{'Baseline':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {Error_test_baseline[i][0]:.3e}"
-                )
-                print(
-                    f"{'Logistic regression':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {test_err_log_reg:.3e} with {opt_alpha:.2e} Lambda"
-                )
-
-                print(
-                    f"{'ANN classification':<20}: Outer Fold {i+1}/{K_outer}: Test Error: {error_rate_nn:.3e} with {inner_fold_optimal_hidden_neurons} Neurons"
-                )
-                print("---" * 20)
-
-            stats.mc_nemar(
+            # Perform statistical tests
+            results_mc_menar = stats.mc_nemar(
                 y_true=y_test,
                 pred_nn=prediction_nn,
                 pred_baseline=prediction_baseline,
@@ -306,8 +392,29 @@ def outer_layer(
                 alpha=0.05,
             )
 
-        return Error_test_regression, Error_test_baseline, test_errors
+            # Print progress
+            if verbose >= 0:
+                print_fold_results(
+                    i,
+                    K_outer,
+                    train_errors_baseline,
+                    train_errors_regression,
+                    train_errors_nn,
+                    test_errors_baseline,
+                    test_errors_regression,
+                    test_errors_nn,
+                )
+                print_statistical_test_results(results_mc_menar, regression)
 
+        return (
+            train_errors_regression,
+            test_errors_regression,
+            train_errors_baseline,
+            test_errors_baseline,
+            train_errors_nn,
+            test_errors_nn,
+            learning_curves,
+        )
     # Importing the data
 
 
@@ -318,12 +425,6 @@ N, M = X.shape
 
 neurons = [1, 2, 3, 5, 7, 10, 15, 20]
 alphas = np.logspace(-5, 9, num=40)
-
-
-# 0 - Silent, no output.
-# 1 - Basic progress information and critical results.
-# 2 - Detailed progress, including epoch-wise or step-wise updates.
-# 3 - Very detailed output, including batch-level updates, gradients, or more in-depth debugging information.
 
 outer_layer(
     X,

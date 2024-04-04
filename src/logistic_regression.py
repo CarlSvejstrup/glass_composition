@@ -140,7 +140,9 @@ def train_eval(train_inner, train_outer, test_set, alphas, K_inner=10, verbose=0
     # 
     model = model.fit(train_outer[0], train_outer[1])
     # Calculate the error rate of the trained model on the test set
+    
+    train_err, _ = error_rate(model, train_outer)
     test_err, pred = error_rate(model, test_set)
 
     # Return the test error rate, optimal alpha index, optimal alpha value, and the trained model
-    return test_err, opt_alpha_idx, opt_alpha, model, pred
+    return test_err, train_err, opt_alpha_idx, opt_alpha, model, pred
