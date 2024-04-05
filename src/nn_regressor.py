@@ -114,7 +114,7 @@ def train(dataloader, model, loss_fn, optimizer, verbose=1):
         print(f"Training complete. Final loss: {learning_curve[-1]:>7f}")
 
     # Return the learning curve
-    return learning_curve
+    return [np.mean(learning_curve)]
 
 
 def test(dataloader, model, loss_fn, verbose=1):

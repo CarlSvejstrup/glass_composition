@@ -5,6 +5,7 @@ import logging
 # ANN
 import torch
 from sklearn import model_selection
+import matplotlib.pyplot as plt
 
 import nn_classifier as nn_class
 import nn_regressor as nn_reg
@@ -67,6 +68,7 @@ def print_fold_results(
 
 # Logging the results for the statistical tests
 def print_statistical_test_results(results, t_test=True):
+    # For T-Test (Regression)
     if t_test:
         logger.info("\n=== Statistical T-Test Results ===")
         logger.info(
@@ -92,6 +94,8 @@ def print_statistical_test_results(results, t_test=True):
             f"{'NN-Baseline':<15} | {results['nn_baseline'][0][0]:<15.2e} | {results['nn_baseline'][0][1]:<15.2e} | p-value: {results['nn_baseline'][1]:.2e}"
         )
         logger.info("-" * 60)
+
+    # For McNemar's Test (Classification)
     else:
         logger.info("\n=== McNemar's Test Results ===")
         logger.info(
@@ -109,6 +113,21 @@ def print_statistical_test_results(results, t_test=True):
         )
         # Assuming similar return structure for other comparisons, repeat the logging format for them
         logger.info("-" * 60)
+
+
+# Function for plotting the results for the learning curves
+def plot_learning_curves(learning_curves):
+    # Create a square figure with equal width and height, e.g., 6x6 inches.
+    fig, ax = plt.subplots(figsize=(6, 6))
+    for i, curve in enumerate(learning_curves):
+        ax.plot(curve, label=f"Fold {i+1}")
+    ax.set_title("Learning Curves for Neural Network")
+    ax.set_xlabel("Epochs")
+    ax.set_ylabel("Mean Squared Error")
+    ax.set_ylim([0, 1])
+    # Removed the ax.set_aspect("equal") for maintaining the figure's square appearance without forcing axis scaling.
+    ax.legend()
+    plt.show()
 
 
 def outer_layer(
@@ -189,20 +208,31 @@ def outer_layer(
             # Training data for inner loop
             train_data = (X_train, y_train)
 
+            # Standardize the features based on the training set. This is only for the neural network
+            # The other methods have their own standardization on the inner loop
+
+            scalerX = StandardScaler()
+            scalerY = StandardScaler()
             # Standardize the features based on the training set
+            X_train_st = scalerX.fit_transform(X_train)
+            X_test_st = scalerX.transform(X_test)
+
+            # Standardize the y_train because of the very low variance in the target variable
+            y_train_st = scalerY.fit_transform(y_train.reshape(-1, 1)).flatten()
+            y_test_st = scalerY.transform(y_test.reshape(-1, 1)).flatten()
+
+            # outer training data
+            outer_train_data = (X_train_st, y_train_st)
+            outer_test_data = (X_test_st, y_test_st)
+
+            # Standardize for the neural network
             if nn_standardize:
-                scaler = StandardScaler()
-                # Standardize the features based on the training set
-
-                X_train = scaler.fit_transform(X_train)
-                X_test = scaler.transform(X_test)
-
-                outer_train_data = (X_train, y_train)
-                outer_test_data = (X_test, y_test)
+                outer_train_data_nn = (X_train_st, y_train_st)
+                outer_test_data_nn = (X_test_st, y_test_st)
 
             else:
-                outer_train_data = (X_train, y_train)
-                outer_test_data = (X_test, y_test)
+                outer_train_data_nn = (X_train, y_train)
+                outer_test_data_nn = (X_test, y_test)
 
             # Regalurized linear regression
             (
@@ -220,12 +250,11 @@ def outer_layer(
 
             train_errors_regression[i] = (train_err, opt_lambda)
             test_errors_regression[i] = (test_err, opt_lambda)
-
             w_rlr_arr.append(w_rlr)
 
             # Baseline testing for the current fold
             test_errors_baseline[i], train_errors_baseline[i], squared_err_baseline = (
-                rlr.lr_baseline(train_data, outer_test_data)
+                rlr.lr_baseline(outer_train_data, outer_test_data)
             )
 
             # Train and evaluate hidden neurons from the inner layers
@@ -246,8 +275,8 @@ def outer_layer(
 
             # Training and testing best model from the inner layer
             test_err, _, train_err, squared_err_nn = nn_reg.outer_test(
-                train_set=outer_train_data,
-                test_set=outer_test_data,
+                train_set=outer_train_data_nn,
+                test_set=outer_test_data_nn,
                 hidden_neuron=inner_fold_optimal_hidden_neurons,
                 batch_size=batch_size,
                 epochs=epochs,
@@ -282,7 +311,6 @@ def outer_layer(
             # Plot different regeralization rates for the last fold
             if plot and i == K_outer - 1:
                 rlr.plot_rlr(
-                    alphas,
                     alphas,
                     mean_w_vs_lambda,
                     train_err_vs_lambda,
@@ -320,24 +348,31 @@ def outer_layer(
             # Training data for inner loop
             train_data = (X_train, y_train)
 
+            # Standardize the features based on the training set. This is only for the neural network
+            # The other methods have their own standardization on the inner loop
+
+            scaler = StandardScaler()
+
             # Standardize the features based on the training set
+            X_train_st = scaler.fit_transform(X_train)
+            X_test_st = scaler.transform(X_test)
+
+            # outer training data
+            outer_train_data = (X_train_st, y_train)
+            outer_test_data = (X_test_st, y_test)
+
+            # Standardize for the neural network
             if nn_standardize:
-                scaler = StandardScaler()
-                # Standardize the features based on the training set
-
-                X_train = scaler.fit_transform(X_train)
-                X_test = scaler.transform(X_test)
-
-                outer_train_data = (X_train, y_train)
-                outer_test_data = (X_test, y_test)
+                outer_train_data_nn = (X_train_st, y_train)
+                outer_test_data_nn = (X_test_st, y_test)
 
             else:
-                outer_train_data = (X_train, y_train)
-                outer_test_data = (X_test, y_test)
+                outer_train_data_nn = (X_train, y_train)
+                outer_test_data_nn = (X_test, y_test)
 
             # Baseline testing for the current fold for classification for the dominant class
             test_errors_baseline[i], train_errors_baseline[i], prediction_baseline = (
-                log_reg.baseline(train_data, outer_test_data)
+                log_reg.baseline(outer_train_data, outer_test_data)
             )
 
             # Train and evaluate hidden neurons
@@ -357,8 +392,8 @@ def outer_layer(
             )
 
             test_err, train_err, prediction_nn = nn_class.outer_test(
-                outer_train_data,
-                outer_test_data,
+                outer_train_data_nn,
+                outer_test_data_nn,
                 hidden_neuron=inner_fold_optimal_hidden_neurons,
                 batch_size=batch_size,
                 epochs=epochs,
@@ -423,20 +458,22 @@ X = np.asanyarray(df.drop(["RI"], axis=1))
 
 N, M = X.shape
 
-neurons = [1, 2, 3, 5, 7, 10, 15, 20]
+neurons = [1, 2, 3, 5, 7, 10, 15, 17, 20, 25]
 alphas = np.logspace(-5, 9, num=40)
 
-outer_layer(
+_, _, _, _, _, _, learning_curves = outer_layer(
     X,
     y,
     batch_size=5,
     hidden_neurons_list=neurons,
-    epochs=25,
+    epochs=50,
     K_outer=10,
     K_inner=10,
     verbose=0,
     alphas=alphas,
     plot=True,
-    nn_standardize=False,
+    nn_standardize=True,
     regression=True,
 )
+
+plot_learning_curves(learning_curves)

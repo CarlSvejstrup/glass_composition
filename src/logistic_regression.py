@@ -48,7 +48,7 @@ def train(
     train_set,
     verbose,
     alphas,
-    K_inner=10,
+    K_inner=10
 ):
     """
     Trains a logistic regression model using the given training set.
@@ -113,7 +113,7 @@ def error_rate(model, test_set):
     return test_err, pred.astype(int)
 
 
-def train_eval(train_inner, train_outer, test_set, alphas, K_inner=10, verbose=0):
+def train_eval(train_inner, train_outer, test_outer, alphas, K_inner=10, verbose=0):
     """
     Trains a logistic regression model on the given train_set and evaluates its performance on the test_set.
 
@@ -142,7 +142,7 @@ def train_eval(train_inner, train_outer, test_set, alphas, K_inner=10, verbose=0
     # Calculate the error rate of the trained model on the test set
     
     train_err, _ = error_rate(model, train_outer)
-    test_err, pred = error_rate(model, test_set)
+    test_err, pred = error_rate(model, test_outer)
 
     # Return the test error rate, optimal alpha index, optimal alpha value, and the trained model
     return test_err, train_err, opt_alpha_idx, opt_alpha, model, pred

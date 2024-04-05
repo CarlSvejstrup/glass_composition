@@ -105,7 +105,7 @@ def train(dataloader, model, loss_fn, optimizer, verbose=1):
     if verbose >= 1:  # Basic progress update after all batches
         print(f"Training complete. Final loss: {learning_curve[-1]:>7f}")
 
-    return learning_curve, model
+    return [np.mean(learning_curve)], model
 
 
 def test(dataloader, model, loss_fn, verbose):

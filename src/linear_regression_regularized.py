@@ -32,7 +32,8 @@ def lr_baseline(train_set, test_set):
     Error_train_baseline = np.mean(np.square(y_train - np.mean(y_train)))
 
     # Calculate the baseline error for the test set
-    squared_errors = np.square(y_test - np.mean(y_test))
+    squared_errors = np.square(y_test - np.mean(y_train))
+
     Error_test_baseline = np.mean(squared_errors)
 
     return Error_test_baseline, Error_train_baseline, squared_errors
@@ -55,6 +56,11 @@ def train_rlr(train_set, alphas, K_inner=5):
     # Split the data into X and y and convert to numpy arrays
     X_train, y_train = train_set
 
+    # Standardize the y_train
+    scaler = StandardScaler()
+    y_train = scaler.fit_transform(y_train.reshape(-1, 1)).flatten()
+
+    # Add bias term to the data
     X_train = np.concatenate((np.ones((X_train.shape[0], 1)), X_train), 1)
 
     # Run the rlr_validate function
@@ -125,7 +131,6 @@ def outer_test_rlr(test_set, train_set, opt_lambda):
 
 
 def plot_rlr(
-    alphas,
     lambdas,
     mean_w_vs_lambda,
     train_err_vs_lambda,
@@ -137,7 +142,6 @@ def plot_rlr(
     Plot the results of Ridge Regression with different regularization factors.
 
     Parameters:
-    alphas (array-like): Array of regularization factors.
     lambdas (array-like): Array of regularization factors.
     mean_w_vs_lambda (array-like): Array of mean coefficient values for each lambda.
     train_err_vs_lambda (array-like): Array of squared errors for training data for each lambda.
@@ -158,7 +162,7 @@ def plot_rlr(
     plt.subplot(1, 2, 2)
     plt.title("Optimal lambda: 1e{0}".format(np.log10(opt_lambda)))
     plt.loglog(
-        alphas, train_err_vs_lambda.T, "b.-", lambdas, test_err_vs_lambda.T, "r.-"
+        lambdas, train_err_vs_lambda.T, "b.-", lambdas, test_err_vs_lambda.T, "r.-"
     )
     plt.xlabel("Regularization factor")
     plt.ylabel("Squared error (crossvalidation)")
