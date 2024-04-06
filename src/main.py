@@ -466,7 +466,7 @@ _, _, _, _, _, _, learning_curves = outer_layer(
     y,
     batch_size=5,
     hidden_neurons_list=neurons,
-    epochs=25,
+    epochs=5,
     K_outer=2,
     K_inner=10,
     verbose=0,
