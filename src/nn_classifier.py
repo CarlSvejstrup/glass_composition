@@ -185,7 +185,6 @@ def nested_layer(
     dataset,
     hidden_neurons,
     batch_size,
-    standardize=False,
     epochs=5,
     verbose=1,
     K_inner=5,
@@ -217,10 +216,13 @@ def nested_layer(
         X_test, y_test = X[test_index, :], y[test_index]
 
         # Standardize the data
-        if standardize:
-            scaler = StandardScaler()
-            X_train = scaler.fit_transform(X_train)
-            X_test = scaler.transform(X_test)
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+
+        scalar_y = StandardScaler()
+        y_train = scalar_y.fit_transform(y_train.reshape(-1, 1)).flatten()
+        y_test = scalar_y.transform(y_test.reshape(-1, 1)).flatten()
 
         X_train = torch.tensor(X_train, dtype=torch.float32)
         y_train = torch.tensor(y_train, dtype=torch.float32)
@@ -389,6 +391,7 @@ def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose
     # Get a sample to determine feature size
     sample_features, _ = train_dataset[0]
     input_size = sample_features.shape[0]
+    print(f"input {input_size}")
 
     # Initialize the neural network model, loss function, and optimizer
     model = ANN(input=input_size, hidden=hidden_neuron, output=1)
