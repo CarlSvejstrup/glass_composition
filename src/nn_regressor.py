@@ -213,8 +213,7 @@ def train_and_eval(
         )
         learning_curve_epochs.extend(learning_curve)
 
-        # add curve from individual epoch to learning_curve_epochs
-
+    
         # Test the model after each epoch
         eval_error, squared_err, all_predictions = test(
             test_dataloader, model, loss_fn, verbose=verbose

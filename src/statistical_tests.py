@@ -100,24 +100,19 @@ def mc_nemar(y_true, pred_nn, pred_baseline, pred_log_reg, alpha=0.05):
     Returns:
         tuple: A tuple containing the point estimate (thetahat), confidence interval (CI), and p-value (p).
     """
-    # print("\n Statistical test results:")
-    # print("---" * 20)
+    print(f"baseline: {pred_baseline}")
+    print(f"nn: {pred_nn}")
+    print(f"log_reg: {pred_log_reg}")
+    print(f"y_true: {y_true}")
 
-    # print(f"Model (ANN) and Model: (Baseline):")
     [thetahat_1, CI_1, p_1] = mcnemar(
         y_true, pred_nn, pred_baseline, alpha=alpha, print=False
     )
-    # print(thetahat)
 
-    # print("___" * 20)
-    # print(f"Model (ANN): and Model: (Logistic regression):")
     [thetahat_2, CI_2, p_2] = mcnemar(
         y_true, pred_nn, pred_log_reg, alpha=alpha, print=False
     )
-    #  print(thetahat)
 
-    # print("___" * 20)
-    # print(f"Model (Baseline): and Model: (Logistic regression):")
     [thetahat_3, CI_3, p_3] = mcnemar(
         y_true, pred_log_reg, pred_baseline, alpha=alpha, print=False
     )

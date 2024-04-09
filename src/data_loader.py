@@ -27,3 +27,5 @@ attribute_names = ["Na", "Mg", "Al", "Si", "K ", "Ca", "Ba", "Fe"]
 
 # Revoming Type and Id
 df.drop(["Id", "Type"], axis=1, inplace=True)
+
+print(df["RI"].describe())

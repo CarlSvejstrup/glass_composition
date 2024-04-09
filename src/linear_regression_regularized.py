@@ -132,11 +132,13 @@ def outer_test_rlr(test_set, train_set, opt_lambda):
 
 def plot_rlr(
     lambdas,
-    mean_w_vs_lambda,
     train_err_vs_lambda,
     test_err_vs_lambda,
     opt_lambda,
+    mean_weight,
     index=0,
+    save_plot=False,
+    regression=True,
 ):
     """
     Plot the results of Ridge Regression with different regularization factors.
@@ -152,9 +154,12 @@ def plot_rlr(
     Returns:
     None
     """
+
+    plt.figure(index, figsize=(12, 8))
+
     plt.figure(index, figsize=(12, 8))
     plt.subplot(1, 2, 1)
-    plt.semilogx(lambdas, mean_w_vs_lambda.T[:, 1:], ".-")  # Don't plot the bias term
+    plt.semilogx(lambdas, mean_weight.T[:, 1:], ".-")  # Don't plot the bias term
     plt.xlabel("Regularization factor")
     plt.ylabel("Mean Coefficient Values")
     plt.grid()
@@ -168,3 +173,8 @@ def plot_rlr(
     plt.ylabel("Squared error (crossvalidation)")
     plt.legend(["Train error", "Validation error"])
     plt.grid()
+
+    if save_plot and regression:
+        plt.savefig("./img/regression_plot_regarulized.png", dpi=300)
+    elif save_plot:
+        plt.savefig("./img/regression_plot_classification.png", dpi=300)

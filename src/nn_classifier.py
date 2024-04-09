@@ -391,7 +391,6 @@ def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose
     # Get a sample to determine feature size
     sample_features, _ = train_dataset[0]
     input_size = sample_features.shape[0]
-    print(f"input {input_size}")
 
     # Initialize the neural network model, loss function, and optimizer
     model = ANN(input=input_size, hidden=hidden_neuron, output=1)

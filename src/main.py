@@ -30,8 +30,8 @@ color_list = [
 # TODO
 # - Add more comments
 
-np.random.seed(15)
-torch.manual_seed(15)
+np.random.seed(16)
+torch.manual_seed(16)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -127,22 +127,86 @@ def print_statistical_test_results(results, t_test=True):
         logger.info("-" * 60)
 
 
+def summarize(
+    train_errors_regression,
+    test_errors_regression,
+    train_errors_nn,
+    test_errors_nn,
+    train_errors_baseline,
+    test_errors_baseline,
+):
+    logger.info("=== Summary ===\n")
+
+    # Header for sections
+    header = f"{'Model':<20} | {'Train Error':<20} | {'Test Error':<20} | {'Test Error Std':<20} | {'R^2 Test':<20} | {'R^2 Train'}"
+    separator = "-" * len(header)
+
+    # Baseline
+    logger.info("=== Baseline ===")
+    logger.info(separator)
+    logger.info(header)
+    logger.info(
+        f"{'Baseline':<20} | {train_errors_baseline.mean():<20.2e} | {test_errors_baseline.mean():<20.2e} | {test_errors_baseline.std():<20.2e} | {'N/A':<20} | {'N/A'}"
+    )
+    logger.info(separator + "\n")
+
+    # Regression
+    logger.info("=== Regression ===")
+    logger.info(separator)
+    logger.info(header)
+    test_r2_regression = (
+        f"{1 - test_errors_regression.mean() / test_errors_baseline.mean():.2f}"
+    )
+    train_r2_regression = (
+        f"{1 - train_errors_regression.mean() / train_errors_baseline.mean():.2f}"
+    )
+    logger.info(
+        f"{'Regression':<20} | {train_errors_regression.mean():<20.2e} | {test_errors_regression.mean():<20.2e} | {test_errors_regression.std():<20.2e} | {test_r2_regression:<20} | {train_r2_regression}"
+    )
+    logger.info(separator + "\n")
+
+    # Neural Network
+    logger.info("=== Neural Network ===")
+    logger.info(separator)
+    logger.info(header)
+    test_r2_nn = f"{1 - test_errors_nn.mean() / test_errors_baseline.mean():.2f}"
+    train_r2_nn = f"{1 - train_errors_nn.mean() / train_errors_baseline.mean():.2f}"
+    logger.info(
+        f"{'Neural Network':<20} | {train_errors_nn.mean():<20.2e} | {test_errors_nn.mean():<20.2e} | {test_errors_nn.std():<20.2e} | {test_r2_nn:<20} | {train_r2_nn}"
+    )
+    logger.info(separator)
+
+
 # Function for plotting the results for the learning curves
-def plot_learning_curves(learning_curves):
+def plot_learning_curves(learning_curves, regression=True, save_plot=False):
     # Create a square figure with equal width and height, e.g., 6x6 inches.
     fig, ax = plt.subplots(figsize=(6, 6))
     for i, curve in enumerate(learning_curves):
         ax.plot(curve, label=f"Fold {i+1}")
-    ax.set_title("Learning Curves for Neural Network")
+
+    if regression:
+        ax.set_title("Learning Curves for Neural Network Regressor")
+        ax.set_ylabel("MSE Loss")
+    else:
+        ax.set_title("Learning Curves for Neural Network Classifier")
+        ax.set_ylabel("Binary Cross-Entropy Loss")
     ax.set_xlabel("Epochs")
-    ax.set_ylabel("MSE Loss")
+
     # Removed the ax.set_aspect("equal") for maintaining the figure's square appearance without forcing axis scaling.
     ax.legend()
+    plt.grid()
+
+    if save_plot and regression:
+        plt.savefig("./img/learning_curves_regression.png", dpi=300)
+    elif save_plot:
+        plt.savefig("./img/learning_curves_classification.png", dpi=300)
+
     plt.show()
 
 
-def plot_pred_true(y_true, y_est):
+def plot_pred_true(y_true, y_est, save_plot=False):
     plt.figure(figsize=(10, 10))
+
     axis_range = [np.min([y_est, y_true]) - 1, np.max([y_est, y_true]) + 1]
     plt.plot(axis_range, axis_range, "k--")
     plt.plot(y_true, y_est, "ob", alpha=0.25)
@@ -154,10 +218,15 @@ def plot_pred_true(y_true, y_est):
     plt.ylabel("Estimated value")
     plt.grid()
 
+    if save_plot:
+        plt.savefig("./img/pred_true.png", dpi=300)
+
     plt.show()
 
 
-def plot_all_erros(error_nn, error_baseline, error_rlr):
+def plot_all_erros(
+    error_nn, error_baseline, error_rlr, save_plot=False, regression=True
+):
     error_baseline = error_baseline.flatten()
 
     # Plotting the different errors for the all fold
@@ -169,20 +238,37 @@ def plot_all_erros(error_nn, error_baseline, error_rlr):
 
     ax.bar(x - width, error_nn, width, label="Neural Network", color="tab:blue")
     ax.bar(x, error_baseline, width, label="Baseline", color="tab:orange")
-    ax.bar(
-        x + width,
-        error_rlr,
-        width,
-        label="Regularized Linear Regression",
-        color="tab:green",
-    )
+    if regression:
+        ax.set_ylabel("MSE Test Error")
+        ax.set_title("MSE Test Errors for Different Models")
+        ax.bar(
+            x + width,
+            error_rlr,
+            width,
+            label="Regularized Linear Regression",
+            color="tab:green",
+        )
+    else:
+        ax.set_ylabel("Misclassification Rate")
+        ax.set_title("Misclassification Rate for Different Models")
+        ax.bar(
+            x + width,
+            error_rlr,
+            width,
+            label="Regularized Logistic Regression",
+            color="tab:green",
+        )
 
     ax.set_xticks(x)
     ax.set_xticklabels([f"Fold {i+1}" for i in range(len(error_nn))])
-    ax.set_title("MSE Test Errors for Different Models")
     ax.set_xlabel("Fold")
-    ax.set_ylabel("MSE Test Error")
+
     ax.legend()
+
+    if save_plot and regression:
+        plt.savefig("./img/all_errors_regression.png", dpi=300)
+    elif save_plot:
+        plt.savefig("./img/all_errors_classification.png", dpi=300)
 
     plt.show()
 
@@ -198,8 +284,8 @@ def outer_layer(
     K_outer=10,
     K_inner=5,
     verbose=1,
-    nn_standardize=False,
     regression=True,
+    save_plot=False,
 ):
     """
     Perform outer layer of k-fold cross-validation for regression or classification tasks.
@@ -283,6 +369,11 @@ def outer_layer(
             outer_train_data = (X_train_st, y_train_st)
             outer_test_data = (X_test_st, y_test_st)
 
+            # Baseline testing for the current fold
+            test_errors_baseline[i], train_errors_baseline[i], squared_err_baseline = (
+                rlr.lr_baseline(outer_train_data, outer_test_data)
+            )
+
             # Regalurized linear regression
             (
                 opt_lambda,
@@ -300,11 +391,6 @@ def outer_layer(
             train_errors_regression[i] = (train_err, opt_lambda)
             test_errors_regression[i] = (test_err, opt_lambda)
             w_rlr_arr.append(w_rlr)
-
-            # Baseline testing for the current fold
-            test_errors_baseline[i], train_errors_baseline[i], squared_err_baseline = (
-                rlr.lr_baseline(outer_train_data, outer_test_data)
-            )
 
             # Train and evaluate hidden neurons from the inner layers
             (
@@ -333,7 +419,10 @@ def outer_layer(
             # Get last elements form train_err
 
             test_errors_nn[i] = (test_err, inner_fold_optimal_hidden_neurons)
-            train_errors_nn[i] = (train_err[-1], inner_fold_optimal_hidden_neurons)
+            train_errors_nn[i] = (
+                train_err[-1],
+                inner_fold_optimal_hidden_neurons,
+            )  # Get the last element from the training error
             learning_curves.append(train_err)
             nn_y_est.append(y_est)
 
@@ -364,12 +453,14 @@ def outer_layer(
                     train_err_vs_lambda,
                     test_err_vs_lambda,
                     opt_lambda,
+                    mean_w_vs_lambda,
                     index=0,
-                    mean_w_vs_lambda=mean_w_vs_lambda,
+                    save_plot=save_plot,
+                    regression=regression,
                 )
 
             if i == K_outer - 1:
-                plot_pred_true(y_test_st, y_est)
+                plot_pred_true(y_test_st, y_est, save_plot)
 
         return (
             train_errors_regression,
@@ -413,13 +504,6 @@ def outer_layer(
             outer_train_data = (X_train_st, y_train)
             outer_test_data = (X_test_st, y_test)
 
-            print(outer_test_data[0].shape, outer_train_data[0].shape)
-
-            # Standardize for the neural network
-
-            outer_train_data_nn = (X_train_st, y_train)
-            outer_test_data_nn = (X_test_st, y_test)
-
             # Baseline testing for the current fold for classification for the dominant class
             test_errors_baseline[i], train_errors_baseline[i], prediction_baseline = (
                 log_reg.baseline(outer_train_data, outer_test_data)
@@ -450,7 +534,10 @@ def outer_layer(
             )
 
             test_errors_nn[i] = (test_err, inner_fold_optimal_hidden_neurons)
-            train_errors_nn[i] = (train_err[-1], inner_fold_optimal_hidden_neurons)
+            train_errors_nn[i] = (
+                np.min(train_err),
+                inner_fold_optimal_hidden_neurons,
+            )  # Minumum for training errors
             learning_curves.append(train_err)
 
             (
@@ -461,6 +548,7 @@ def outer_layer(
                 opt_alpha,
                 final_model,
                 prediction_log_reg,
+                weights_vs_lambda,
             ) = log_reg.train_eval(
                 train_data, outer_train_data, outer_test_data, alphas, K_inner
             )
@@ -469,8 +557,15 @@ def outer_layer(
             train_errors_regression[i] = (train_err, opt_alpha)
 
             if plot and i == K_outer - 1:
-                log_reg.plot_rlr(
-                    alphas, train_err_vs_lambda, val_err_vs_lambda, opt_alpha, index=0
+                rlr.plot_rlr(
+                    alphas,
+                    train_err_vs_lambda,
+                    val_err_vs_lambda,
+                    opt_alpha,
+                    mean_weight=weights_vs_lambda.T,
+                    index=0,
+                    save_plot=save_plot,
+                    regression=regression,
                 )
 
             # Perform statistical tests
@@ -513,15 +608,19 @@ X = np.asanyarray(df.drop(["RI"], axis=1))
 
 N, M = X.shape
 
-neurons = [7, 10, 15, 17, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
+neurons = [1, 2, 5, 7, 10, 15, 17, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
 alphas = np.logspace(-5, 9, num=50)
 
+regression = True
+save_plot = True
+
+
 (
-    _,
+    train_errors_regression,
     test_errors_regression,
-    _,
+    train_errors_baseline,
     test_errors_baseline,
-    _,
+    train_errors_nn,
     test_errors_nn,
     learning_curves,
 ) = outer_layer(
@@ -529,15 +628,35 @@ alphas = np.logspace(-5, 9, num=50)
     y,
     batch_size=5,
     hidden_neurons_list=neurons,
-    epochs=25,
+    epochs=35,
     K_outer=10,
     K_inner=10,
     verbose=0,
     alphas=alphas,
     plot=True,
-    nn_standardize=True,
-    regression=False,
+    regression=regression,
+    save_plot=save_plot,
 )
 
-plot_learning_curves(learning_curves)
-plot_all_erros(test_errors_nn[:, 0], test_errors_baseline, test_errors_regression[:, 0])
+plot_learning_curves(learning_curves, regression=regression, save_plot=save_plot)
+plot_all_erros(
+    test_errors_nn[:, 0],
+    test_errors_baseline,
+    test_errors_regression[:, 0],
+    save_plot=save_plot,
+    regression=regression,
+)
+
+
+summarize(
+    train_errors_regression[:, 0],
+    test_errors_regression[:, 0],
+    train_errors_nn[:, 0],
+    test_errors_nn[:, 0],
+    train_errors_baseline,
+    test_errors_baseline,
+)
+
+import os
+
+print("Current Working Directory:", os.getcwd())
