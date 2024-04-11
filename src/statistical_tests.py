@@ -122,3 +122,5 @@ def mc_nemar(y_true, pred_nn, pred_baseline, pred_log_reg, alpha=0.05):
         "nn_logreg": [thetahat_2, CI_2, p_2],
         "baseline_logreg": [thetahat_3, CI_3, p_3],
     }
+
+

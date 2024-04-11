@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from sklearn import model_selection
 import sklearn.linear_model as lm
 from dtuimldmtools import rlr_validate
+import sys
 
 
 class NNDataset(Dataset):
@@ -60,7 +61,7 @@ class ANN(nn.Module):
         return logits
 
 
-def train(dataloader, model, loss_fn, optimizer, verbose=1):
+def train(dataloader, model, loss_fn, optimizer):
     """
     Trains the neural network model using the given dataloader, loss function, and optimizer.
 
@@ -99,25 +100,11 @@ def train(dataloader, model, loss_fn, optimizer, verbose=1):
         # Append the current loss value to the learning curve list
         learning_curve.append(loss.item())
 
-        # Print detailed loss information if verbose level is 3
-        if verbose >= 3:
-            loss, current = loss.item(), (batch + 1) * len(X)
-            print(f"Batch {batch}: Loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
-        # Print loss information every 5 batches if verbose level is 2
-        if verbose == 2 and batch % 5 == 0:
-            loss, current = loss.item(), (batch + 1) * len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
-    # Print basic progress update after all batches if verbose level is 1
-    if verbose >= 1:
-        print(f"Training complete. Final loss: {learning_curve[-1]:>7f}")
-
     # Return the learning curve
     return [np.mean(learning_curve)]
 
 
-def test(dataloader, model, loss_fn, verbose=1):
+def test(dataloader, model, loss_fn):
     """
     Evaluate the performance of a model on a test dataset.
 
@@ -131,15 +118,14 @@ def test(dataloader, model, loss_fn, verbose=1):
         tuple: A tuple containing the average test error (MSE) and an array of squared errors.
 
     """
-    # Get the size of the test dataset
-    size = len(dataloader.dataset)
+
     # Get the number of batches in the dataloader
     num_batches = len(dataloader)
     # Set the model to evaluation mode
     model.eval()
     # Initialize test error and loss variables
     test_error = 0
-    test_loss, current = 0, 0
+    test_loss = 0
 
     # Initialize an empty list to store squared errors
     all_squared_errors = []
@@ -152,36 +138,27 @@ def test(dataloader, model, loss_fn, verbose=1):
             pred = model(X)
             all_predictions.extend(pred.view(-1).tolist())
 
-            # Reshape the target tensor to match the predicted tensor shape
             y = y.view_as(pred)
             # Calculate the loss between the predicted and target tensors
-            test_loss = loss_fn(pred, y).item()
+            loss = loss_fn(pred, y)
             # Update the test error
-            test_error += test_loss
+            test_error += loss.item()
 
+            # Reshape the target tensor to match the predicted tensor shape
             # Calculate the squared errors
             squared_errors = np.square(y - pred)
             # Flatten the squared errors tensor and convert to a list, then extend the all_squared_errors list
             all_squared_errors.extend(squared_errors.view(-1).tolist())
 
-            # Update the current count of processed samples
-            current += len(X)
-            # Print detailed output for each batch if verbosity level is 3 or higher
-            if verbose >= 3:
-                print(f"Batch Test Loss: {test_loss:>8f}")
-
     # Calculate the average test error
     test_error /= num_batches
-    # Print basic summary of test results if verbosity level is 1 or higher
-    if verbose >= 1:
-        print(f"Average Test MSE: {test_error:>8f} \n")
 
     # Return the average test error and the array of squared errors
     return test_error, np.asarray(all_squared_errors), np.asarray(all_predictions)
 
 
 def train_and_eval(
-    model, train_dataloader, test_dataloader, loss_fn, optimizer, epochs=5, verbose=1
+    model, train_dataloader, test_dataloader, loss_fn, optimizer, epochs=5
 ):
     """
     Trains and evaluates a neural network model.
@@ -206,27 +183,16 @@ def train_and_eval(
     # See dtype of dataloader
 
     for t in range(epochs):
-        if verbose >= 1:
-            print(f"Epoch {t+1}\n-------------------------------")
-        learning_curve = train(
-            train_dataloader, model, loss_fn, optimizer, verbose=verbose
-        )
+        learning_curve = train(train_dataloader, model, loss_fn, optimizer)
         learning_curve_epochs.extend(learning_curve)
 
-    
         # Test the model after each epoch
-        eval_error, squared_err, all_predictions = test(
-            test_dataloader, model, loss_fn, verbose=verbose
-        )
+        eval_error, squared_err, all_predictions = test(test_dataloader, model, loss_fn)
 
         # Save the best model
         if eval_error < best_test_error:
             best_test_error = eval_error
             best_model = model
-
-    if verbose >= 1:  # Final summary after all epochs
-        print(f"Finished Training the model. Best Test MSE: {best_test_error:>8f}\n")
-        print("___" * 20, "\n")
 
     return (
         best_test_error,
@@ -280,6 +246,8 @@ def nested_layer(
     inner_fold_lowest_error = float("inf")
 
     # Inner k-fold loop
+    if verbose >= 2:
+        print("running inner k-fold loop", end="")
     for i, (train_indx, test_index) in enumerate(inner_k_folds.split(X, y)):
         X_train, y_train = X[train_indx, :], y[train_indx]
         X_test, y_test = X[test_index, :], y[test_index]
@@ -309,7 +277,7 @@ def nested_layer(
 
         # Print information about the current inner fold if verbosity level is 2 or higher
         if verbose >= 2:
-            print(f"Starting Inner Fold {i+1}/{K_inner}", "\n", "-" * 30)
+            print("#", end="")
 
         # Get a sample to determine feature size
         sample_features, _ = train_dataset[0]
@@ -323,9 +291,6 @@ def nested_layer(
 
         # Evaluate different num of hidden neurons
         for j, num_neurons in enumerate(hidden_neurons):
-            if verbose >= 1:
-                print(f"Evaluating {num_neurons} neurons in Inner Fold {i+1}/{K_inner}")
-
             # Initialize the neural network model, loss function, and optimizer for each hidden neuron configuration
             model = ANN(input=input_size, hidden=num_neurons, output=1)
             loss_fn = nn.MSELoss()
@@ -339,7 +304,6 @@ def nested_layer(
                 loss_fn,
                 optimizer,
                 epochs=epochs,
-                verbose=verbose,
             )
 
             # Save the best model and error for the current number of neurons
@@ -359,10 +323,10 @@ def nested_layer(
         optimal_model_per_fold[i] = fold_best_model
         learning_curves_per_fold.append(fold_best_learning_curve)
 
-        if verbose >= 1:
+        if verbose >= 2:
             print("###" * 20)
             print(
-                f"Inner Fold {i+1}/{K_inner}: Best Hidden Neurons: {fold_optimal_hidden_neurons}, Test Error: {fold_best_error}",
+                f"Inner Fold {i+1}/{K_inner}: Best Hidden Neurons: {fold_optimal_hidden_neurons}, Test Error: {fold_best_error:.2e}",
                 "\n",
                 "###" * 20,
                 "\n",
@@ -374,10 +338,10 @@ def nested_layer(
             inner_fold_best_model = fold_best_model
             inner_fold_optimal_hidden_neurons = fold_optimal_hidden_neurons
 
-    if verbose >= 1:
+    if verbose >= 2:
         print("**" * 20)
         print(
-            f"\nBest Model across Inner Folds: {inner_fold_optimal_hidden_neurons} Neurons, Lowest Error: {inner_fold_lowest_error}"
+            f"\nBest Model across all inner Folds: {inner_fold_optimal_hidden_neurons} Neurons, Lowest Error: {inner_fold_lowest_error}"
         )
         print("**" * 20, "\n")
 
@@ -405,8 +369,6 @@ def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose
         tuple: A tuple containing the best test error, the best model, and the learning curve.
 
     """
-    if verbose >= 1:
-        print("Starting Outer Loop training", "\n", "-" * 30)
 
     # Convert training and test sets to tensors
     X_train_tensor = torch.tensor(train_set[0], dtype=torch.float32)
@@ -439,7 +401,6 @@ def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose
         loss_fn,
         optimizer,
         epochs=epochs,
-        verbose=verbose,
     )
 
     return test_error, model, learning_curve, squared_err, all_predictions

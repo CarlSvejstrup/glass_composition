@@ -133,7 +133,7 @@ def train_eval(train_inner, train_outer, test_outer, alphas, K_inner=10):
     X_test_outer, y_test_outer = test_outer
 
     # Train the model and get the best model and errors
-    train_err_vs_lambda, val_err_vs_lambda, best_alpha, weights = train(
+    train_err_vs_lambda, val_err_vs_lambda, best_alpha, weights_vs_lambda = train(
         X_train_inner, y_train_inner, alphas, K_inner
     )
 
@@ -153,6 +153,9 @@ def train_eval(train_inner, train_outer, test_outer, alphas, K_inner=10):
 
     model = model.fit(X_train_outer, y_train_outer)
 
+    w_rlr = model.coef_
+    w_rlr[0] = model.intercept_
+
     # Train error rate
     y_train_pred = model.predict(X_train_outer)
     train_error = np.mean(y_train_pred != y_train_outer)
@@ -169,5 +172,6 @@ def train_eval(train_inner, train_outer, test_outer, alphas, K_inner=10):
         best_alpha,
         model,
         y_test_pred,
-        weights,
+        weights_vs_lambda,
+        w_rlr,
     )

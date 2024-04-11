@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from sklearn import model_selection
 import sklearn.linear_model as lm
 from dtuimldmtools import rlr_validate
+import sys
 
 
 class NNDataset(Dataset):
@@ -62,7 +63,7 @@ class ANN(nn.Module):
         return logits
 
 
-def train(dataloader, model, loss_fn, optimizer, verbose=1):
+def train(dataloader, model, loss_fn, optimizer):
     """
     Trains a neural network model using the given dataloader, loss function, and optimizer.
 
@@ -94,21 +95,10 @@ def train(dataloader, model, loss_fn, optimizer, verbose=1):
 
         learning_curve.append(loss.item())
 
-        if verbose >= 3:
-            loss, current = loss.item(), (batch + 1) * len(X)
-            print(f"Batch {batch}: Loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
-        if verbose == 2 and batch % 5 == 0:
-            loss, current = loss.item(), (batch + 1) * len(X)
-            print(f"loss: {loss:>7f}  [{current:>5d}/{size:>5d}]")
-
-    if verbose >= 1:  # Basic progress update after all batches
-        print(f"Training complete. Final loss: {learning_curve[-1]:>7f}")
-
     return [np.mean(learning_curve)], model
 
 
-def test(dataloader, model, loss_fn, verbose):
+def test(dataloader, model, loss_fn):
     num_batches = len(dataloader)
     model.eval()
     test_error = 0
@@ -121,18 +111,14 @@ def test(dataloader, model, loss_fn, verbose):
             test_loss = loss_fn(pred, y).item()
             test_error += test_loss
             current += len(X)
-            if verbose >= 3:  # Detailed output for each batch
-                print(f"Batch Test Loss: {test_loss:>8f}")
 
     test_error /= num_batches
-    if verbose >= 1:  # Basic summary of test results
-        print(f"Average Test MSE: {test_error:>8f} \n")
 
     return test_error
 
 
 def train_and_eval(
-    model, train_dataloader, test_dataloader, loss_fn, optimizer, epochs=5, verbose=1
+    model, train_dataloader, test_dataloader, loss_fn, optimizer, epochs=5
 ):
     """
     Train and evaluate a neural network model.
@@ -155,28 +141,18 @@ def train_and_eval(
     learning_curve_epochs = []
 
     for t in range(epochs):
-        if verbose >= 1:
-            print(f"Epoch {t+1}\n-------------------------------")
-        learning_curve, _ = train(
-            train_dataloader, model, loss_fn, optimizer, verbose=verbose
-        )
+        learning_curve, _ = train(train_dataloader, model, loss_fn, optimizer)
         learning_curve_epochs.extend(learning_curve)
 
         # add curve from individual epoch to learning_curve_epochs
 
         # Test the model after all epochs
-        err_rate = test(test_dataloader, model, loss_fn, verbose=verbose)
+        err_rate = test(test_dataloader, model, loss_fn)
 
         # Save the best model
         if err_rate < best_test_err:
             best_err_rate = err_rate
             best_model = model
-
-    if verbose >= 1:  # Final summary after all epochs
-        print(
-            f"Finished Training training the neuron. Best Test loss: {best_test_err:>8f}\n"
-        )
-        print("___" * 20, "\n")
 
     return best_err_rate, best_model, learning_curve_epochs
 
@@ -211,6 +187,8 @@ def nested_layer(
     inner_fold_lowest_error = float("inf")
 
     # Inner k-fold loop
+    if verbose >= 2:
+        print("running inner k-fold loop", end="")
     for i, (train_indx, test_index) in enumerate(inner_k_folds.split(X, y)):
         X_train, y_train = X[train_indx, :], y[train_indx]
         X_test, y_test = X[test_index, :], y[test_index]
@@ -240,7 +218,7 @@ def nested_layer(
         test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
         if verbose >= 2:
-            print(f"Starting Inner Fold {i+1}/{K_inner}", "\n", "-" * 30)
+            print("#", end="")
 
         fold_best_error = float("inf")
         fold_optimal_hidden_neurons = None
@@ -252,8 +230,6 @@ def nested_layer(
 
         # Evaluate different num of hidden neurons
         for j, num_neurons in enumerate(hidden_neurons):
-            if verbose >= 1:
-                print(f"Evaluating {num_neurons} neurons in Inner Fold {i+1}/{K_inner}")
 
             # Create model, loss function and optimizer for each configuration of hidden neurons
             model = ANN(input=input_size, hidden=num_neurons, output=1)
@@ -288,7 +264,7 @@ def nested_layer(
         optimal_model_per_fold[i] = fold_best_model
         learning_curves_per_fold.append(fold_best_learning_curve)
 
-        if verbose >= 1:
+        if verbose >= 2:
             print("###" * 20)
             print(
                 f"Inner Fold {i+1}/{K_inner}: Best Hidden Neurons: {fold_optimal_hidden_neurons}, Test Error: {fold_best_error}",
@@ -303,7 +279,7 @@ def nested_layer(
             inner_fold_best_model = fold_best_model
             inner_fold_optimal_hidden_neurons = fold_optimal_hidden_neurons
 
-    if verbose >= 1:
+    if verbose >= 2:
         print("**" * 20)
         print(
             f"\nBest Model across Inner Folds: {inner_fold_optimal_hidden_neurons} Neurons, Lowest Error: {inner_fold_lowest_error}"
@@ -318,7 +294,7 @@ def nested_layer(
     )
 
 
-def error_rate(X, y, model, verbose):
+def error_rate(X, y, model):
     """
     Calculate the classification error rate for a given model.
 
@@ -352,10 +328,6 @@ def error_rate(X, y, model, verbose):
         # Assuming binary classification
         accuracy = pred.eq(y).sum().item() / len(y)
         error_rate = 1 - accuracy
-
-    if verbose >= 1:
-        print(f"Accuracy: {accuracy:.8f}")
-        print(f"Error rate: {error_rate:.8f}")
 
     return accuracy, error_rate, np.asanyarray(all_preds)
 
@@ -398,13 +370,8 @@ def outer_test(train_set, test_set, hidden_neuron, batch_size, epochs=5, verbose
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     for _ in range(epochs):
-        learning_curve, model = train(
-            train_dataloader, model, loss_fn, optimizer, verbose=verbose
-        )
+        learning_curve, model = train(train_dataloader, model, loss_fn, optimizer)
         learning_curve_list.extend(learning_curve)
 
     _, test_err, squared_err = error_rate(test_set[0], test_set[1], model, verbose)
-    # Evaluate the model on the test set
-    # TODO
-    # Return the error_rate function (squared error and error)
     return test_err, learning_curve_list, squared_err

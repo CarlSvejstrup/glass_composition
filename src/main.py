@@ -274,55 +274,49 @@ def plot_all_erros(
 
 
 def outer_layer(
-    X,
-    y,
-    batch_size,
-    hidden_neurons_list,
-    alphas,
-    plot,
-    epochs=10,
-    K_outer=10,
-    K_inner=5,
-    verbose=1,
-    regression=True,
-    save_plot=False,
+    X: np.ndarray,
+    y: np.ndarray,
+    batch_size: int,
+    hidden_neurons_list: list,
+    alphas: list,
+    plot: bool,
+    epochs: int = 10,
+    K_outer: int = 10,
+    K_inner: int = 5,
+    verbose: int = 1,
+    regression: bool = True,
+    save_plot: bool = False,
 ):
     """
-    Perform outer layer of k-fold cross-validation for regression or classification tasks.
+    Perform two-layer nested cross-validation for regression or classification. The outer loop is used to evaluate the
+    performance of the models, while the inner loop is used to tune the hyperparameters. The hyperparameters evaluated
+    are the regularization parameter for regularized linear/logistic regression and the number of hidden neurons for the neural
+    network. Statistical tests are performed to compare the models against a baseline model and each other.
 
     Parameters:
-    - X (numpy.ndarray): Input features.
-    - y (numpy.ndarray): Target values.
-    - batch_size (int): Number of samples per batch for neural network training.
-    - hidden_neurons_list (list): List of integers representing the number of hidden neurons to evaluate.
-    - alphas (list): List of regularization parameters for regularized linear regression.
-    - plot (bool): Whether to plot regularization results for the last fold.
-    - epochs (int): Number of epochs for neural network training. Default is 10.
-    - K_outer (int): Number of outer folds for k-fold cross-validation. Default is 10.
-    - K_inner (int): Number of inner folds for k-fold cross-validation. Default is 5.
-    - verbose (int): Verbosity level. Set to 0 for no output, 1 for progress updates, and 2 for detailed output. Default is 1.
-    - nn_standardize (bool): Whether to standardize the data for the neural network. Default is False.
-    - regression (bool): Whether the task is regression or classification. Default is True.
-
+    - X (array-like): The input features.
+    - y (array-like): The target variable.
+    - batch_size (int): The batch size for neural network training.
+    - hidden_neurons_list (list): List of hidden neuron configurations to evaluate.
+    - alphas (list): List of regularization parameters to evaluate.
+    - plot (bool): Whether to plot the results.
+    - epochs (int): The number of epochs for neural network training. Default is 10.
+    - K_outer (int): The number of outer folds for cross-validation. Default is 10.
+    - K_inner (int): The number of inner folds for cross-validation. Default is 5.
+    - verbose (int): The verbosity level. Default is 1.
+    - regression (bool): Whether to perform regression or classification. Default is True.
+    - save_plot (bool): Whether to save the plot. Default is False.
 
     Returns:
-    - If regression is True:
-        - Error_train_regression (numpy.ndarray): Tuple of test errors and optimal alpha for linear regression, for each fold.
-        - Error_test_regression (numpy.ndarray): Tuple of test errors and optimal alpha for linear regression, for each fold.
-        - Error_train_baseline (numpy.ndarray): Training errors for baseline model.
-        - Error_test_baseline (numpy.ndarray): Test errors for baseline model.
-        - Error_train_nn (numpy.ndarray): Tuple of lowest training error and optimal hidden neurons for neural network regressor, for each fold
-        - Error_test_nn (numpy.ndarray): Tuple of lowest test errors and optimal hidden neurons for neural network regressor, for each fold
-        - learning_curves (numpy.ndarray): Training errors for neural network regressor.
+    - train_errors_regression (array-like): Training errors for regression.
+    - test_errors_regression (array-like): Testing errors for regression.
+    - train_errors_baseline (array-like): Training errors for baseline.
+    - test_errors_baseline (array-like): Testing errors for baseline.
+    - train_errors_nn (array-like): Training errors for neural network.
+    - test_errors_nn (array-like): Testing errors for neural network.
+    - learning_curves (list): Training error curves for neural network.
+    - w_rlr_arr (list): Regularized linear regression weights.
 
-    - If regression is False:
-        - Error_train_regression (numpy.ndarray): Tuple of test errors and optimal alpha for logistic regression, for each fold.
-        - Error_test_regression (numpy.ndarray): Tuple of test errors and optimal alpha for logistic regression, for each fold.
-        - Error_train_baseline (numpy.ndarray): Training errors for baseline model.
-        - Error_test_baseline (numpy.ndarray): Test errors for baseline model.
-        - Error_train_nn (numpy.ndarray): Tuple of lowest training error and optimal hidden neurons for neural network classification, for each fold
-        - Error_test_nn (numpy.ndarray): Tuple of lowest test errors and optimal hidden neurons for neural network classification, for each fold
-        - learning_curves (numpy.ndarray): Training errors for neural network classification.
     """
 
     # Store errors for regression and baseline for each fold
@@ -433,7 +427,7 @@ def outer_layer(
             )
 
             # Print progress
-            if verbose >= 0:
+            if verbose >= 1:
                 print_fold_results(
                     i,
                     K_outer,
@@ -459,7 +453,6 @@ def outer_layer(
                     regression=regression,
                 )
 
-            if i == K_outer - 1:
                 plot_pred_true(y_test_st, y_est, save_plot)
 
         return (
@@ -470,6 +463,7 @@ def outer_layer(
             train_errors_nn,
             test_errors_nn,
             learning_curves,
+            w_rlr_arr,
         )
 
     if regression == False:
@@ -481,7 +475,7 @@ def outer_layer(
         # outer k-fold loop
         for i, (train_idx, test_idx) in enumerate(kf_outer.split(X, y)):
             # Print progress
-            if verbose >= 0:
+            if verbose >= 1:
                 print(f"\nStarting Outer Fold {i+1}/{K_outer}")
                 print("-" * 30)
 
@@ -549,12 +543,14 @@ def outer_layer(
                 final_model,
                 prediction_log_reg,
                 weights_vs_lambda,
+                w_rlr,
             ) = log_reg.train_eval(
                 train_data, outer_train_data, outer_test_data, alphas, K_inner
             )
 
             test_errors_regression[i] = (test_error, opt_alpha)
             train_errors_regression[i] = (train_err, opt_alpha)
+            w_rlr_arr.append(w_rlr)
 
             if plot and i == K_outer - 1:
                 rlr.plot_rlr(
@@ -599,64 +595,72 @@ def outer_layer(
             train_errors_nn,
             test_errors_nn,
             learning_curves,
+            w_rlr_arr,
         )
     # Importing the data
 
 
-y = np.asanyarray((df["RI"]).squeeze())
-X = np.asanyarray(df.drop(["RI"], axis=1))
+if __name__ == "__main__":
 
-N, M = X.shape
+    neurons = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    alphas = np.logspace(-5, 9, num=50)
 
-neurons = [1, 2, 5, 7, 10, 15, 17, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70]
-alphas = np.logspace(-5, 9, num=50)
+    regression: bool = True
+    plot: bool = True
+    save_plot: bool = False
+    verbose: int = 1
+    epochs: int = 20
 
-regression = True
-save_plot = True
+    y = np.asanyarray((df["RI"]).squeeze())
+    X = np.asanyarray(df.drop(["RI"], axis=1))
 
+    (
+        train_errors_regression,
+        test_errors_regression,
+        train_errors_baseline,
+        test_errors_baseline,
+        train_errors_nn,
+        test_errors_nn,
+        learning_curves,
+        w_rlr_arr,
+    ) = outer_layer(
+        X,
+        y,
+        batch_size=5,
+        hidden_neurons_list=neurons,
+        epochs=epochs,
+        K_outer=10,
+        K_inner=10,
+        verbose=verbose,
+        alphas=alphas,
+        plot=plot,
+        regression=regression,
+        save_plot=save_plot,
+    )
+    if verbose >= 1:
+        for i, arr in enumerate(w_rlr_arr):
+            print(f"Fold {i+1}")
+            print(arr)
+            print("\n")
 
-(
-    train_errors_regression,
-    test_errors_regression,
-    train_errors_baseline,
-    test_errors_baseline,
-    train_errors_nn,
-    test_errors_nn,
-    learning_curves,
-) = outer_layer(
-    X,
-    y,
-    batch_size=5,
-    hidden_neurons_list=neurons,
-    epochs=35,
-    K_outer=10,
-    K_inner=10,
-    verbose=0,
-    alphas=alphas,
-    plot=True,
-    regression=regression,
-    save_plot=save_plot,
-)
+    if plot:
+        plot_learning_curves(
+            learning_curves, regression=regression, save_plot=save_plot
+        )
+        plot_all_erros(
+            test_errors_nn[:, 0],
+            test_errors_baseline,
+            test_errors_regression[:, 0],
+            save_plot=save_plot,
+            regression=regression,
+        )
 
-plot_learning_curves(learning_curves, regression=regression, save_plot=save_plot)
-plot_all_erros(
-    test_errors_nn[:, 0],
-    test_errors_baseline,
-    test_errors_regression[:, 0],
-    save_plot=save_plot,
-    regression=regression,
-)
-
-
-summarize(
-    train_errors_regression[:, 0],
-    test_errors_regression[:, 0],
-    train_errors_nn[:, 0],
-    test_errors_nn[:, 0],
-    train_errors_baseline,
-    test_errors_baseline,
-)
-
-import os
-
-print("Current Working Directory:", os.getcwd())
+    if verbose >= 1:
+        summarize(
+            train_errors_regression[:, 0],
+            test_errors_regression[:, 0],
+            train_errors_nn[:, 0],
+            test_errors_nn[:, 0],
+            train_errors_baseline,
+            test_errors_baseline,
+        )
